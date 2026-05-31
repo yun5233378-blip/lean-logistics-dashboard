@@ -83,8 +83,31 @@ sudo journalctl -u lean-logistics-dashboard -f
 
 - `22`：SSH
 - `80`：HTTP
-- `8000`：原型直连访问端口。如果服务器已有 Caddy/Nginx 占用 `80/443`，可以先用 `http://服务器IP:8000` 访问本系统
 - `443`：HTTPS，如果后续配置域名证书
+
+如果服务器已有 Caddy/Nginx 占用 `80/443`，不要把本项目挂到其他项目域名的路径下面。建议添加独立站点块：
+
+```caddyfile
+http://lean-logistics.void52.site {
+    encode gzip
+    reverse_proxy 172.19.0.1:8000
+}
+```
+
+同时在 DNS 中添加：
+
+```text
+lean-logistics.void52.site  A  43.156.180.164
+```
+
+如果暂时没有独立域名，也可以把服务器裸 IP 临时指向本项目：
+
+```caddyfile
+http://43.156.180.164 {
+    encode gzip
+    reverse_proxy 172.19.0.1:8000
+}
+```
 
 ## 4. Render 部署
 
