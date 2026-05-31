@@ -38,7 +38,54 @@ git push -u origin main
 python -m backend.verify_backend
 ```
 
-## 3. Render 部署
+## 3. 腾讯云服务器部署
+
+适合 Ubuntu / Debian 系服务器。部署方式是：
+
+- GitHub 托管代码
+- 腾讯云服务器 `git pull`
+- systemd 常驻运行 FastAPI
+- Nginx 反向代理到 `127.0.0.1:8000`
+
+首次部署：
+
+```bash
+git clone https://github.com/yun5233378-blip/lean-logistics-dashboard.git /tmp/lean-logistics-dashboard
+cd /tmp/lean-logistics-dashboard
+sudo bash scripts/tencent_bootstrap.sh
+```
+
+更新部署：
+
+```bash
+cd /opt/lean-logistics-dashboard
+sudo bash scripts/tencent_deploy.sh
+```
+
+启用 Nginx 反代：
+
+```bash
+sudo cp /opt/lean-logistics-dashboard/deploy/tencent/nginx.conf.example /etc/nginx/sites-available/lean-logistics-dashboard
+sudo ln -sf /etc/nginx/sites-available/lean-logistics-dashboard /etc/nginx/sites-enabled/lean-logistics-dashboard
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+服务检查：
+
+```bash
+curl http://127.0.0.1:8000/api/health
+sudo systemctl status lean-logistics-dashboard --no-pager
+sudo journalctl -u lean-logistics-dashboard -f
+```
+
+腾讯云安全组需要放行：
+
+- `22`：SSH
+- `80`：HTTP
+- `443`：HTTPS，如果后续配置域名证书
+
+## 4. Render 部署
 
 推荐方式：在 Render 新建 Web Service，连接 GitHub 仓库。
 
@@ -50,7 +97,7 @@ python -m backend.verify_backend
 
 仓库内已经提供 `render.yaml`，也可以用 Render Blueprint 方式导入。
 
-## 4. Railway 部署
+## 5. Railway 部署
 
 推荐方式：Railway 连接 GitHub 仓库后选择 Dockerfile 部署。
 
@@ -61,14 +108,13 @@ python -m backend.verify_backend
 
 Railway 会使用 `$PORT` 环境变量启动服务。
 
-## 5. Docker 本地验证
+## 6. Docker 本地验证
 
 ```powershell
 docker build -t lean-logistics-dashboard .
 docker run --rm -p 8000:8000 lean-logistics-dashboard
 ```
 
-## 6. 注意
+## 7. 注意
 
 `lean_logistics.db` 是运行时生成的 Mock 数据库，已加入 `.gitignore`。云端每次冷启动会自动创建一份新的原型数据。
-
