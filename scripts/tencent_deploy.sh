@@ -10,6 +10,7 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
+git config --global --add safe.directory "${APP_DIR}"
 git -C "${APP_DIR}" pull --ff-only
 chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}"
 sudo -u "${APP_USER}" "${APP_DIR}/.venv/bin/pip" install -r "${APP_DIR}/requirements.txt"

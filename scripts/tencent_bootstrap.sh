@@ -18,6 +18,7 @@ mkdir -p "${APP_DIR}"
 if [ ! -d "${APP_DIR}/.git" ]; then
   git clone "${REPO_URL}" "${APP_DIR}"
 else
+  git config --global --add safe.directory "${APP_DIR}"
   git -C "${APP_DIR}" pull --ff-only
 fi
 
@@ -36,4 +37,3 @@ echo "Service started. Check status with:"
 echo "  systemctl status lean-logistics-dashboard --no-pager"
 echo "Local health check:"
 echo "  curl http://127.0.0.1:8000/api/health"
-
