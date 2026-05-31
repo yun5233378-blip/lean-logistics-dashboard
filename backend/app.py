@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
@@ -28,6 +28,15 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def add_runtime_headers(request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    return response
+
+
 @app.on_event("startup")
 def on_startup() -> None:
     init_db()
@@ -38,9 +47,19 @@ def frontend() -> FileResponse:
     return FileResponse(ROOT_DIR / "index.html")
 
 
+@app.head("/", include_in_schema=False)
+def frontend_head() -> Response:
+    return Response(status_code=200)
+
+
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "精益物流决策看板 API"}
+
+
+@app.head("/api/health", include_in_schema=False)
+def health_head() -> Response:
+    return Response(status_code=200)
 
 
 @app.get("/api/options")
@@ -98,3 +117,9 @@ def reset_mock_data() -> dict[str, str]:
     init_db(reset=True)
     return {"status": "ok", "message": "Mock 数据已重置"}
 
+
+@app.get("/{full_path:path}", include_in_schema=False)
+def spa_fallback(full_path: str) -> FileResponse:
+    if full_path.startswith("api/"):
+        raise HTTPException(status_code=404, detail="API endpoint not found")
+    return FileResponse(ROOT_DIR / "index.html")

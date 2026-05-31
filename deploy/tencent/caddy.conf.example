@@ -4,7 +4,7 @@
 # DNS requirement:
 #   logistics.void52.site A 43.156.180.164
 
-http://logistics.void52.site {
+logistics.void52.site {
     encode gzip
     reverse_proxy 172.19.0.1:8000
 }

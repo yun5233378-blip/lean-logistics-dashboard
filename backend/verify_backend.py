@@ -14,6 +14,16 @@ def main() -> None:
     assert health.status_code == 200, health.text
     assert health.json()["status"] == "ok"
 
+    root_head = client.head("/")
+    assert root_head.status_code == 200, root_head.text
+
+    health_head = client.head("/api/health")
+    assert health_head.status_code == 200, health_head.text
+
+    frontend = client.get("/diagnostics")
+    assert frontend.status_code == 200, frontend.text
+    assert "精益物流决策看板" in frontend.text
+
     diag = client.get("/api/diagnostics", params={"scenario": "warehouse"})
     assert diag.status_code == 200, diag.text
     payload = diag.json()
@@ -39,4 +49,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

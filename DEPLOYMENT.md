@@ -83,12 +83,12 @@ sudo journalctl -u lean-logistics-dashboard -f
 
 - `22`：SSH
 - `80`：HTTP
-- `443`：HTTPS，如果后续配置域名证书
+- `443`：HTTPS，正式域名启用 Caddy 自动证书时必需
 
 如果服务器已有 Caddy/Nginx 占用 `80/443`，不要把本项目挂到其他项目域名的路径下面。建议添加独立站点块：
 
 ```caddyfile
-http://logistics.void52.site {
+logistics.void52.site {
     encode gzip
     reverse_proxy 172.19.0.1:8000
 }
@@ -99,6 +99,12 @@ http://logistics.void52.site {
 ```text
 logistics.void52.site  A  43.156.180.164
 ```
+
+上线验收地址：
+
+- 前端：https://logistics.void52.site/
+- API 文档：https://logistics.void52.site/docs
+- 健康检查：https://logistics.void52.site/api/health
 
 如果暂时没有独立域名，也可以把服务器裸 IP 临时指向本项目：
 

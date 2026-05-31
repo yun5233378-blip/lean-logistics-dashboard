@@ -306,7 +306,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
-      const { useMemo, useState } = React;
+      const { useEffect, useMemo, useState } = React;
 
       const fmt = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 1 });
       const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -554,7 +554,7 @@
         });
       }
 
-      function useModel(anomalyId, channel, country, maxDays) {
+      function useLocalModel(anomalyId, channel, country, maxDays) {
         return useMemo(() => {
           const metrics = buildStageMetrics(anomalyId, channel, country);
           const totalHours = metrics.reduce((sum, stage) => sum + stage.lead, 0);
@@ -577,6 +577,130 @@
             routes
           };
         }, [anomalyId, channel, country, maxDays]);
+      }
+
+      const apiStageIds = {
+        Domestic_PickPack: { id: "domestic", icon: "warehouse" },
+        Head_Transit: { id: "head", icon: "flight_takeoff" },
+        Customs_Clearance: { id: "customs", icon: "fact_check" },
+        Oversea_Inbound: { id: "overseas", icon: "inventory_2" },
+        Last_Mile: { id: "lastmile", icon: "local_shipping" }
+      };
+
+      function normalizeApiRoute(route) {
+        if (!route) return null;
+        const legs = (route.legs || []).map((leg) => ({
+          from: leg.start_node,
+          to: leg.end_node,
+          carrier: leg.carrier_name,
+          time: leg.time_days,
+          cost: leg.cost,
+          tag: leg.route_tag
+        }));
+        return {
+          nodes: route.nodes || [],
+          route: legs,
+          time: route.time_days || 0,
+          cost: Math.round(route.cost || 0),
+          carriers: route.carriers || []
+        };
+      }
+
+      function normalizeApiModel(payload) {
+        const diagnostics = payload.diagnostics || {};
+        const summary = diagnostics.summary || {};
+        const routePlan = payload.route_plan || {};
+        const metrics = (diagnostics.stages || []).map((stage) => {
+          const meta = apiStageIds[stage.stage_id] || { id: stage.stage_id, icon: "hub" };
+          return {
+            id: meta.id,
+            name: stage.stage_name,
+            short: stage.stage_short_name,
+            icon: meta.icon,
+            target: stage.target_lead_time_hrs,
+            lead: stage.avg_lead_time_hrs,
+            wait: stage.wait_time_hrs,
+            value: stage.value_added_time_hrs,
+            capacity: stage.daily_capacity,
+            demand: stage.daily_demand,
+            load: stage.load_factor,
+            takt: stage.takt_time_sec,
+            cycle: stage.avg_cycle_time_sec,
+            cv: stage.coefficient_of_variation,
+            wip: stage.wip,
+            status: stage.status
+          };
+        });
+        const bottleneck = metrics.find((stage) => stage.status === "瓶颈") || metrics[0] || stages[0];
+        const batches = ((payload.batches || {}).items || []).map((batch) => ({
+          id: batch.batch_no,
+          channel: batch.channel_type,
+          country: batch.destination,
+          node: batch.current_node,
+          elapsed: batch.elapsed_days,
+          eta: batch.eta_days,
+          risk: batch.risk_level,
+          riskScore: batch.risk_score,
+          issue: batch.issue
+        }));
+        const highRisk = batches.filter((batch) => batch.risk === "高风险").length;
+        const warnRisk = batches.filter((batch) => batch.risk !== "低风险").length;
+
+        return {
+          metrics,
+          totalDays: summary.avg_lead_time_days || 0,
+          waitHours: summary.avg_wait_time_hrs || 0,
+          varRatio: summary.value_added_ratio || 0,
+          bottleneck,
+          batches,
+          highRisk: summary.abnormal_batches || highRisk,
+          warnRisk,
+          tocAdvice: summary.toc_advice,
+          scenarioSummary: diagnostics.scenario?.summary,
+          routeMessage: routePlan.message,
+          routes: {
+            best: normalizeApiRoute(routePlan.selected_route),
+            fastest: normalizeApiRoute(routePlan.fastest_route),
+            cheapest: normalizeApiRoute(routePlan.cheapest_route),
+            recommended: normalizeApiRoute(routePlan.recommended_route),
+            paths: (routePlan.candidate_routes || []).map(normalizeApiRoute),
+            feasibleCount: routePlan.feasible_count || 0,
+            fallback: !!routePlan.fallback
+          },
+          source: "api"
+        };
+      }
+
+      function useModel(anomalyId, channel, country, maxDays) {
+        const localModel = useLocalModel(anomalyId, channel, country, maxDays);
+        const [remote, setRemote] = useState({ model: null, loading: false, error: "" });
+
+        useEffect(() => {
+          const controller = new AbortController();
+          const params = new URLSearchParams({
+            channel_type: channel,
+            destination: country,
+            scenario: anomalyId,
+            max_allowed_days: String(maxDays)
+          });
+
+          setRemote((state) => ({ ...state, loading: true, error: "" }));
+          fetch(`/api/dashboard?${params.toString()}`, { signal: controller.signal })
+            .then((response) => {
+              if (!response.ok) throw new Error(`API ${response.status}`);
+              return response.json();
+            })
+            .then((payload) => setRemote({ model: normalizeApiModel(payload), loading: false, error: "" }))
+            .catch((error) => {
+              if (error.name !== "AbortError") {
+                setRemote({ model: null, loading: false, error: "后端暂不可用，已切换本地沙盘模型" });
+              }
+            });
+
+          return () => controller.abort();
+        }, [anomalyId, channel, country, maxDays]);
+
+        return remote.model ? { ...remote.model, loading: remote.loading, error: remote.error } : { ...localModel, source: "local", loading: remote.loading, error: remote.error };
       }
 
       function Icon({ name, className = "" }) {
@@ -918,7 +1042,7 @@
                 <h3 className="panel-title">今日诊断结论</h3>
                 <p className="mt-4 leading-7 text-sm text-muted">
                   当前系统约束位于<span className="font-black text-rose"> {model.bottleneck.name} </span>。
-                  {anomalies[anomalyId].summary}
+                  {model.scenarioSummary || anomalies[anomalyId].summary}
                   建议先保护瓶颈节点产能，再调整前序放行节奏。
                 </p>
               </div>
@@ -1023,9 +1147,11 @@
                 <h3 className="panel-title">智能诊断建议</h3>
                 <div className="mt-4 rounded-md border border-rose/40 bg-rose/10 p-4">
                   <p className="text-sm leading-7">
-                    当前链路瓶颈位于<span className="font-black text-rose"> {model.bottleneck.name} </span>，
-                    实际周期为<span className="mono font-black text-rose"> {fmt.format(model.bottleneck.cycle)} 秒/件 </span>，
-                    已超过节拍要求。建议提高该节点短班产能，并限制前序节点继续推货。
+                    {model.tocAdvice || <>
+                      当前链路瓶颈位于<span className="font-black text-rose"> {model.bottleneck.name} </span>，
+                      实际周期为<span className="mono font-black text-rose"> {fmt.format(model.bottleneck.cycle)} 秒/件 </span>，
+                      已超过节拍要求。建议提高该节点短班产能，并限制前序节点继续推货。
+                    </>}
                   </p>
                 </div>
                 <div className="mt-4 space-y-3">
@@ -1072,7 +1198,7 @@
                 <div className="mono text-3xl font-black text-emerald">{fmt.format(maxDays)} 天</div>
               </div>
               <input className="range mt-5 w-full" type="range" min="4" max="16" step="0.2" value={maxDays} onChange={(event) => setMaxDays(Number(event.target.value))} />
-              {fallback && <div className="mt-4 rounded-md border border-amber/50 bg-amber/10 p-3 text-sm text-amber">当前约束下无成本可行解，系统已自动切换为最快可达路线。</div>}
+              {fallback && <div className="mt-4 rounded-md border border-amber/50 bg-amber/10 p-3 text-sm text-amber">{model.routeMessage || "当前约束下无成本可行解，系统已自动切换为最快可达路线。"}</div>}
             </section>
             <section className="grid grid-cols-1 gap-5 2xl:grid-cols-[1fr_0.95fr]">
               <div className="card p-5">
