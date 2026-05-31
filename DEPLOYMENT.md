@@ -83,6 +83,7 @@ sudo journalctl -u lean-logistics-dashboard -f
 
 - `22`：SSH
 - `80`：HTTP
+- `8000`：原型直连访问端口。如果服务器已有 Caddy/Nginx 占用 `80/443`，可以先用 `http://服务器IP:8000` 访问本系统
 - `443`：HTTPS，如果后续配置域名证书
 
 ## 4. Render 部署

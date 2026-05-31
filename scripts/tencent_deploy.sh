@@ -13,8 +13,9 @@ fi
 git -C "${APP_DIR}" pull --ff-only
 chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}"
 sudo -u "${APP_USER}" "${APP_DIR}/.venv/bin/pip" install -r "${APP_DIR}/requirements.txt"
+cp "${APP_DIR}/deploy/tencent/lean-logistics-dashboard.service" /etc/systemd/system/lean-logistics-dashboard.service
+systemctl daemon-reload
 systemctl restart lean-logistics-dashboard
 
 echo "Deploy complete."
 systemctl status lean-logistics-dashboard --no-pager
-
