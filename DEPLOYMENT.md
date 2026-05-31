@@ -88,7 +88,7 @@ sudo journalctl -u lean-logistics-dashboard -f
 如果服务器已有 Caddy/Nginx 占用 `80/443`，不要把本项目挂到其他项目域名的路径下面。建议添加独立站点块：
 
 ```caddyfile
-http://lean-logistics.void52.site {
+http://logistics.void52.site {
     encode gzip
     reverse_proxy 172.19.0.1:8000
 }
@@ -97,7 +97,7 @@ http://lean-logistics.void52.site {
 同时在 DNS 中添加：
 
 ```text
-lean-logistics.void52.site  A  43.156.180.164
+logistics.void52.site  A  43.156.180.164
 ```
 
 如果暂时没有独立域名，也可以把服务器裸 IP 临时指向本项目：

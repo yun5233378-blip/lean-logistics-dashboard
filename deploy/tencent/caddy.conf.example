@@ -2,9 +2,9 @@
 # for this project instead of mounting it under another project's path.
 #
 # DNS requirement:
-#   lean-logistics.void52.site A 43.156.180.164
+#   logistics.void52.site A 43.156.180.164
 
-http://lean-logistics.void52.site {
+http://logistics.void52.site {
     encode gzip
     reverse_proxy 172.19.0.1:8000
 }
