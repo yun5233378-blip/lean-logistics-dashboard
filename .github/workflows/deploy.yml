@@ -1,0 +1,26 @@
+name: Deploy Tencent Cloud
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+jobs:
+  deploy:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Prepare SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.TENCENT_SSH_KEY }}" > ~/.ssh/tencent_key
+          chmod 600 ~/.ssh/tencent_key
+          ssh-keyscan -p "${{ secrets.TENCENT_SSH_PORT }}" "${{ secrets.TENCENT_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy
+        run: |
+          ssh -i ~/.ssh/tencent_key \
+            -p "${{ secrets.TENCENT_SSH_PORT }}" \
+            "${{ secrets.TENCENT_USER }}@${{ secrets.TENCENT_HOST }}" \
+            "cd /opt/lean-logistics-dashboard && sudo bash scripts/tencent_deploy.sh"

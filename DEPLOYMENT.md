@@ -38,6 +38,18 @@ git push -u origin main
 python -m backend.verify_backend
 ```
 
+当前仓库还配置了自动部署工作流：
+
+- `CI`：每次推送到 `main` 后运行后端验证。
+- `Deploy Tencent Cloud`：当 `main` 分支的 CI 成功后，通过 SSH 登录腾讯云并执行 `sudo bash scripts/tencent_deploy.sh`。
+
+需要在 GitHub 仓库 Secrets 中配置：
+
+- `TENCENT_HOST`
+- `TENCENT_SSH_PORT`
+- `TENCENT_USER`
+- `TENCENT_SSH_KEY`
+
 ## 3. 腾讯云服务器部署
 
 适合 Ubuntu / Debian 系服务器。部署方式是：
