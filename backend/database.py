@@ -88,6 +88,8 @@ def init_db(reset: bool = False) -> None:
         has_data = execute(conn, "SELECT COUNT(*) AS count FROM fulfillment_records").fetchone()["count"] > 0
         if not has_data:
             seed_data(conn)
+        elif execute(conn, "SELECT COUNT(*) AS count FROM external_shipments").fetchone()["count"] == 0:
+            seed_external_shipments(conn)
         seed_default_admin_config(conn)
         upsert_schema_meta(conn, "schema_version", str(SCHEMA_VERSION))
 
