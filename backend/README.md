@@ -19,12 +19,12 @@ python -m uvicorn backend.app:app --reload --host 127.0.0.1 --port 8000
 ## 核心接口
 
 - `GET /api/health`：健康检查。
-- `GET /api/sources`：数据来源、LPI 指标、模型参考、真实运单统计。
+- `GET /api/sources`：模型依据、LPI 指标、算法参考和业务导入数据口径。
 - `GET /api/options`：渠道、目的地、异常场景选项。
 - `GET /api/dashboard`：总览聚合数据。
 - `GET /api/diagnostics`：TOC 瓶颈诊断。
 - `GET /api/routes/optimize`：带期望交期约束的路径优化。
-- `GET /api/batches`：线路观测和风险等级。
+- `GET /api/batches`：你导入的业务线路观测和风险等级；未导入前为空。
 - `GET /api/ops/status`：生产运行状态摘要。
 
 ## 后台接口
@@ -56,6 +56,8 @@ BIZ-SZ-US-001,空运,深圳,美国,42,1.6,2026-05-01T08:00:00,2026-05-09T11:00:0
 ```
 
 如果提供 `ts_domestic_out`、`ts_head_arrive`、`ts_customs_clear`、`ts_oversea_in`，系统会使用真实节点时间；否则会按全链路时长派生节点时间，确保 TOC 诊断可运行。
+
+主看板只读取 `source_id = BUSINESS_UPLOAD` 的业务批次。World Bank LPI、USAID、OR-Tools、PM4Py、VROOM 只作为模型依据和算法参考，不会作为你的运营数据展示。
 
 ## 定时任务
 

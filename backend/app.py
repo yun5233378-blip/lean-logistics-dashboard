@@ -197,7 +197,7 @@ def batches(
 @app.post("/api/dev/reset")
 def reset_real_data() -> dict[str, str]:
     init_db(reset=True)
-    return {"status": "ok", "message": "真实公开数据索引已重建"}
+    return {"status": "ok", "message": "模型参考索引已重建；主看板仍只展示业务导入数据。"}
 
 
 @app.get("/api/ops/status")
@@ -207,7 +207,7 @@ def ops_status() -> dict[str, object]:
         "status": "ok",
         "database_backend": payload["database_backend"],
         "online_imports_enabled": payload["online_imports_enabled"],
-        "external_shipments": payload["external_shipments"],
+        "business_records": payload["business_records"],
         "latest_imports": payload["imports"][:3],
     }
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Any
 
 from .database import create_backup, execute_write, fetch_all, fetch_one, init_db, list_backup_files, utc_now
@@ -197,6 +198,39 @@ def external_shipments_summary() -> dict[str, Any]:
     }
 
 
+def business_records_summary() -> dict[str, Any]:
+    rows = [dict(row) for row in fetch_all("SELECT * FROM fulfillment_records WHERE source_id = ? ORDER BY id", ("BUSINESS_UPLOAD",))]
+    lead_days = []
+    for row in rows:
+        try:
+            start = datetime.fromisoformat(row["ts_order_created"])
+            end = datetime.fromisoformat(row["ts_last_mile_del"])
+            lead_days.append(max(0.0, (end - start).total_seconds() / 86400))
+        except (TypeError, ValueError):
+            continue
+    by_channel: dict[str, dict[str, Any]] = {}
+    by_destination: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        channel = row["channel_type"]
+        destination = row["destination"]
+        by_channel.setdefault(channel, {"channel_type": channel, "count": 0, "piece_count": 0})
+        by_destination.setdefault(destination, {"destination": destination, "count": 0, "piece_count": 0})
+        by_channel[channel]["count"] += 1
+        by_channel[channel]["piece_count"] += row["piece_count"]
+        by_destination[destination]["count"] += 1
+        by_destination[destination]["piece_count"] += row["piece_count"]
+    return {
+        "total": {
+            "count": len(rows),
+            "piece_count": sum(row["piece_count"] for row in rows),
+            "cbm": round(sum(row["cbm"] for row in rows), 2),
+            "avg_lead_time_days": round(sum(lead_days) / len(lead_days), 2) if lead_days else 0,
+        },
+        "by_channel": sorted(by_channel.values(), key=lambda item: item["count"], reverse=True),
+        "by_destination": sorted(by_destination.values(), key=lambda item: item["count"], reverse=True),
+    }
+
+
 def runtime_status() -> dict[str, Any]:
     return {
         "database_backend": settings.database_backend,
@@ -211,13 +245,13 @@ def runtime_status() -> dict[str, Any]:
         "schedules": list_operational_schedules(),
         "audit_logs": list_audit_logs(),
         "backups": list_backup_files(),
-        "external_shipments": external_shipments_summary(),
+        "business_records": business_records_summary(),
     }
 
 
 def rebuild_data_index() -> dict[str, str]:
     init_db(reset=True)
-    return {"status": "ok", "message": "真实公开数据索引已重建"}
+    return {"status": "ok", "message": "模型参考索引已重建；主看板仍只展示你导入的业务批次。"}
 
 
 def backup_now() -> dict[str, Any]:

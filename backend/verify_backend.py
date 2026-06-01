@@ -28,14 +28,14 @@ def main() -> None:
     sources = client.get("/api/sources")
     assert sources.status_code == 200, sources.text
     source_payload = sources.json()
-    assert source_payload["data_mode"] == "真实公开数据驱动"
-    assert any(item["source_id"] == "WB_LPI_2022" for item in source_payload["sources"])
+    assert source_payload["data_mode"] == "用户业务数据驱动"
+    assert any(item["source_id"] == "BUSINESS_UPLOAD" for item in source_payload["sources"])
 
     diag = client.get("/api/diagnostics", params={"scenario": "warehouse"})
     assert diag.status_code == 200, diag.text
     payload = diag.json()
-    assert payload["stages"], "diagnostics should return stage rows"
-    assert payload["summary"]["bottleneck_node"]["stage_id"] == "Oversea_Inbound"
+    assert payload["stages"] == [], "diagnostics should stay empty before business import"
+    assert payload["summary"]["total_records"] == 0
 
     route = client.get("/api/routes/optimize", params={"scenario": "warehouse", "max_allowed_days": 4})
     assert route.status_code == 200, route.text
@@ -45,17 +45,17 @@ def main() -> None:
 
     dashboard = client.get("/api/dashboard", params={"scenario": "customs", "channel_type": "空运"})
     assert dashboard.status_code == 200, dashboard.text
-    assert dashboard.json()["kpis"]["bottleneck_node"]
-    assert dashboard.json()["model_metadata"]["data_mode"] == "真实公开数据驱动"
+    assert dashboard.json()["kpis"]["avg_lead_time_days"] == 0
+    assert dashboard.json()["model_metadata"]["data_mode"] == "用户业务数据驱动"
 
     batches = client.get("/api/batches", params={"risk_level": "高风险", "limit": 10})
     assert batches.status_code == 200, batches.text
-    assert "items" in batches.json()
+    assert batches.json()["items"] == []
 
     ops = client.get("/api/ops/status")
     assert ops.status_code == 200, ops.text
-    assert "external_shipments" in ops.json()
-    assert ops.json()["external_shipments"]["total"]["count"] >= 5
+    assert "business_records" in ops.json()
+    assert ops.json()["business_records"]["total"]["count"] == 0
 
     unauthorized = client.get("/api/admin/runtime")
     assert unauthorized.status_code == 401
@@ -71,7 +71,7 @@ def main() -> None:
     assert runtime_payload["schedules"]
     assert "backups" in runtime_payload
     assert "audit_logs" in runtime_payload
-    assert runtime_payload["external_shipments"]["total"]["count"] >= 5
+    assert runtime_payload["business_records"]["total"]["count"] == 0
 
     parameter = client.put(
         "/api/admin/model-parameters/route_cost_weight",
@@ -110,6 +110,11 @@ def main() -> None:
     imported_batch = client.get("/api/batches", params={"destination": "美国", "limit": 200})
     assert imported_batch.status_code == 200, imported_batch.text
     assert any(item["batch_no"] == "BIZ-VERIFY-001" for item in imported_batch.json()["items"])
+
+    diag_after_import = client.get("/api/diagnostics", params={"scenario": "warehouse"})
+    assert diag_after_import.status_code == 200, diag_after_import.text
+    assert diag_after_import.json()["stages"], "diagnostics should use imported business rows"
+    assert diag_after_import.json()["summary"]["bottleneck_node"]["stage_id"] == "Oversea_Inbound"
 
     capacity = client.put(
         "/api/admin/node-capacities/Oversea_Inbound",

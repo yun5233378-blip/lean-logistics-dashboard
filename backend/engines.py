@@ -9,6 +9,9 @@ from typing import Any
 from .database import fetch_all
 
 
+BUSINESS_SOURCE_ID = "BUSINESS_UPLOAD"
+
+
 STAGES = [
     {
         "id": "Domestic_PickPack",
@@ -111,8 +114,8 @@ def normalize_filter(value: str | None, all_values: set[str]) -> str | None:
 def get_records(channel_type: str | None = None, destination: str | None = None) -> list[dict[str, Any]]:
     channel_type = normalize_filter(channel_type, {"全部渠道", "全部"})
     destination = normalize_filter(destination, {"全部目的地", "全部"})
-    clauses: list[str] = []
-    params: list[str] = []
+    clauses: list[str] = ["source_id = ?"]
+    params: list[str] = [BUSINESS_SOURCE_ID]
     if channel_type:
         clauses.append("channel_type = ?")
         params.append(channel_type)
@@ -197,13 +200,12 @@ def get_external_shipments_summary() -> dict[str, Any]:
 
 def build_model_metadata() -> dict[str, Any]:
     return {
-        "data_mode": "真实公开数据驱动",
-        "runtime_sample_policy": "已移除演示批次；当前运行数据为 World Bank LPI 2022 指标驱动的线路观测与派生诊断。",
+        "data_mode": "用户业务数据驱动",
+        "runtime_sample_policy": "前端主看板只展示你通过后台导入的业务批次；World Bank LPI、USAID、OR-Tools、PM4Py、VROOM 仅作为模型依据和参考来源，不作为运营数据展示。",
         "sources": get_data_sources(),
         "model_references": get_model_references(),
         "lpi_scores": get_lpi_scores(),
         "model_parameters": get_model_parameters(),
-        "external_shipments": get_external_shipments_summary(),
     }
 
 
@@ -223,8 +225,11 @@ def diagnose_bottlenecks(
                 "total_records": 0,
                 "total_pieces": 0,
                 "avg_lead_time_days": 0,
+                "avg_wait_time_hrs": 0,
                 "value_added_ratio": 0,
                 "bottleneck_node": None,
+                "abnormal_batches": 0,
+                "toc_advice": "尚未导入业务批次，无法判断真实瓶颈。请先在后台导入 CSV/JSON 运单节点数据。",
             },
         }
 

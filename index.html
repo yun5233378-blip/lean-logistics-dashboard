@@ -458,6 +458,15 @@
         const diagnostics = payload.diagnostics || {};
         const summary = diagnostics.summary || {};
         const routePlan = payload.route_plan || {};
+        const hasBusinessData = (summary.total_records || 0) > 0;
+        if (!hasBusinessData) {
+          return {
+            ...emptyModel(false, ""),
+            modelMetadata: payload.model_metadata,
+            routeMessage: "请先在后台导入你的业务批次数据，系统不会展示公开样本或派生观测。",
+            hasBusinessData: false
+          };
+        }
         const metrics = (diagnostics.stages || []).map((stage) => {
           const meta = apiStageIds[stage.stage_id] || { id: stage.stage_id, icon: "hub" };
           return {
@@ -514,6 +523,7 @@
           scenarioSummary: diagnostics.scenario?.summary,
           routeMessage: routePlan.message,
           modelMetadata: payload.model_metadata,
+          hasBusinessData,
           routes: {
             best: normalizeApiRoute(routePlan.selected_route),
             fastest: normalizeApiRoute(routePlan.fastest_route),
@@ -548,7 +558,7 @@
             .then((payload) => setRemote({ model: normalizeApiModel(payload), loading: false, error: "" }))
             .catch((error) => {
               if (error.name !== "AbortError") {
-                setRemote({ model: null, loading: false, error: "后端暂不可用，真实公开数据暂未加载" });
+                setRemote({ model: null, loading: false, error: "后端暂不可用，业务数据暂未加载" });
               }
             });
 
@@ -581,10 +591,36 @@
           highRisk: 0,
           warnRisk: 0,
           routes: { best: null, fastest: null, cheapest: null, recommended: null, paths: [], feasibleCount: 0, fallback: false },
+          modelMetadata: null,
+          hasBusinessData: false,
           source: "api",
           loading,
           error
         };
+      }
+
+      function EmptyDataState({ setPage, title = "等待导入你的业务数据" }) {
+        return (
+          <div className="page-pad">
+            <section className="card grid-bg p-8">
+              <div className="max-w-3xl">
+                <span className="inline-flex h-12 w-12 items-center justify-center rounded-md border border-emerald/40 bg-emerald/10 text-emerald">
+                  <Icon name="upload_file" />
+                </span>
+                <h3 className="mt-5 text-2xl font-black text-text">{title}</h3>
+                <p className="mt-3 leading-7 text-muted">
+                  主看板已清空公开样本和派生观测。只有你在“后台管理”中导入的 CSV/JSON 业务批次，才会进入交期分析、TOC 瓶颈诊断、异常模拟和线路观测。
+                </p>
+                <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <div className="rounded-md bg-surface-lowest p-4"><p className="font-bold">1. 打开后台管理</p><p className="micro mt-2">填写管理员 Token</p></div>
+                  <div className="rounded-md bg-surface-lowest p-4"><p className="font-bold">2. 粘贴业务 CSV</p><p className="micro mt-2">字段包含批次号和节点时间</p></div>
+                  <div className="rounded-md bg-surface-lowest p-4"><p className="font-bold">3. 查看诊断</p><p className="micro mt-2">系统按你的数据实时计算</p></div>
+                </div>
+                {setPage && <button className="btn btn-primary mt-6" onClick={() => setPage("admin")}><Icon name="admin_panel_settings" />去后台导入</button>}
+              </div>
+            </section>
+          </div>
+        );
       }
 
       function Icon({ name, className = "" }) {
@@ -888,6 +924,7 @@
       }
 
       function Overview({ model, setPage, anomalyId }) {
+        if (!model.hasBusinessData) return <EmptyDataState setPage={setPage} />;
         const route = model.routes.best;
         return (
           <div className="page-pad space-y-5">
@@ -956,17 +993,17 @@
             <section className="card p-5">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
-                  <h3 className="panel-title">数据与模型依据</h3>
-                  <p className="micro mt-1">{model.modelMetadata?.runtime_sample_policy || "正在加载真实公开数据来源"}</p>
+                  <h3 className="panel-title">模型依据（非业务数据）</h3>
+                  <p className="micro mt-1">{model.modelMetadata?.runtime_sample_policy || "正在加载模型依据"}</p>
                 </div>
                 <span className="rounded-full border border-emerald/40 bg-emerald/10 px-3 py-1 text-xs font-black text-emerald">{model.modelMetadata?.data_mode || "API 数据"}</span>
               </div>
               <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-3">
-                {(model.modelMetadata?.sources || []).slice(0, 3).map((source) => (
-                  <a key={source.source_id} href={source.url} target="_blank" className="rounded-md border border-outline bg-surface-lowest p-4 transition hover:border-emerald">
+                {(model.modelMetadata?.model_references || []).slice(0, 3).map((source) => (
+                  <a key={source.ref_id} href={source.url} target="_blank" className="rounded-md border border-outline bg-surface-lowest p-4 transition hover:border-emerald">
                     <p className="text-sm font-black">{source.name}</p>
-                    <p className="micro mt-2">{source.publisher}</p>
-                    <p className="mt-3 line-clamp-2 text-xs text-muted">{source.coverage_note}</p>
+                    <p className="micro mt-2">算法参考</p>
+                    <p className="mt-3 line-clamp-2 text-xs text-muted">{source.use_in_model}</p>
                   </a>
                 ))}
               </div>
@@ -975,7 +1012,8 @@
         );
       }
 
-      function LeadTimePage({ model }) {
+      function LeadTimePage({ model, setPage }) {
+        if (!model.hasBusinessData) return <EmptyDataState setPage={setPage} title="导入业务批次后才能计算时效" />;
         return (
           <div className="page-pad space-y-5">
             <section className="grid grid-cols-1 gap-4 xl:grid-cols-4">
@@ -1007,7 +1045,7 @@
               </div>
             </section>
             <section className="card p-5">
-              <h3 className="panel-title">真实来源线路观测</h3>
+              <h3 className="panel-title">业务线路观测</h3>
               <div className="mt-4 overflow-auto">
                 <table className="soft-table w-full min-w-[760px] text-left text-sm">
                   <thead className="bg-surface-lowest text-muted">
@@ -1032,7 +1070,8 @@
         );
       }
 
-      function BottleneckPage({ model }) {
+      function BottleneckPage({ model, setPage }) {
+        if (!model.hasBusinessData) return <EmptyDataState setPage={setPage} title="导入业务批次后才能诊断瓶颈" />;
         return (
           <div className="page-pad space-y-5">
             <section className="grid grid-cols-1 gap-5 2xl:grid-cols-[1.35fr_0.65fr]">
@@ -1088,7 +1127,8 @@
         );
       }
 
-      function RoutesPage({ model, maxDays, setMaxDays }) {
+      function RoutesPage({ model, maxDays, setMaxDays, setPage }) {
+        if (!model.hasBusinessData) return <EmptyDataState setPage={setPage} title="导入业务批次后再推荐路线" />;
         const { best, fastest, cheapest, recommended, fallback } = model.routes;
         return (
           <div className="page-pad space-y-5">
@@ -1126,7 +1166,8 @@
         );
       }
 
-      function ExceptionsPage({ anomalyId, inject, reset, model }) {
+      function ExceptionsPage({ anomalyId, inject, reset, model, setPage }) {
+        if (!model.hasBusinessData) return <EmptyDataState setPage={setPage} title="导入业务批次后才能做异常模拟" />;
         const beforeDays = model.baselineDays || model.totalDays;
         return (
           <div className="page-pad space-y-5">
@@ -1164,7 +1205,8 @@
         );
       }
 
-      function BatchesPage({ model }) {
+      function BatchesPage({ model, setPage }) {
+        if (!model.hasBusinessData) return <EmptyDataState setPage={setPage} title="暂无你导入的线路观测" />;
         const [risk, setRisk] = useState("全部风险");
         const [query, setQuery] = useState("");
         const filtered = model.batches.filter((batch) => (risk === "全部风险" || batch.risk === risk) && (query.trim() === "" || batch.id.includes(query.trim()) || batch.node.includes(query.trim()) || batch.country.includes(query.trim())));
@@ -1174,7 +1216,7 @@
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
                   <h3 className="panel-title">线路观测明细</h3>
-                  <p className="micro">共 {filtered.length} 条公开数据驱动观测，按风险等级和当前节点筛选</p>
+                  <p className="micro">共 {filtered.length} 条你导入的业务观测，按风险等级和当前节点筛选</p>
                 </div>
                 <div className="flex gap-3">
                   <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索观测、国家或节点" className="h-9 rounded-md border border-outline bg-surface-low px-3 text-sm text-text" />
@@ -1274,12 +1316,6 @@
             .finally(() => setLoading(false));
         };
 
-        const importUsaid = () => runAction("USAID 运单导入", () => fetch("/api/admin/data/import/usaid", {
-          method: "POST",
-          headers: adminHeaders(),
-          body: JSON.stringify({ limit: Number(runtime?.model_parameters?.find((item) => item.key === "usaid_default_import_limit")?.value || 80) })
-        }));
-
         const importBusiness = () => runAction("业务数据导入", () => fetch("/api/admin/data/import/business", {
           method: "POST",
           headers: adminHeaders(),
@@ -1336,7 +1372,7 @@
 
             <section className="grid grid-cols-1 gap-5 xl:grid-cols-4">
               <MetricCard title="数据库后端" value={runtime?.database_backend || "未连接"} icon="database" hint="DATABASE_URL 控制" tone="normal" />
-              <MetricCard title="真实运单" value={runtime?.external_shipments?.total?.count || 0} suffix="条" icon="dataset" hint="USAID/业务导入数据" tone="normal" />
+              <MetricCard title="业务批次" value={runtime?.business_records?.total?.count || 0} suffix="条" icon="dataset" hint="仅统计你导入的数据" tone="normal" />
               <MetricCard title="导入任务" value={runtime?.imports?.length || 0} suffix="次" icon="cloud_download" hint="最近任务记录" tone="warn" />
               <MetricCard title="审计事件" value={runtime?.audit_logs?.length || 0} suffix="条" icon="history" hint={runtime?.auth_mode || "Bearer Token"} tone="normal" />
             </section>
@@ -1347,7 +1383,6 @@
                   <h3 className="panel-title">数据源导入</h3>
                   <div className="flex gap-2">
                     <button className="btn btn-primary" onClick={importBusiness} disabled={loading}><Icon name="upload_file" />导入业务数据</button>
-                    <button className="btn" onClick={importUsaid} disabled={loading}><Icon name="cloud_download" />导入 USAID</button>
                     <button className="btn" onClick={backupNow} disabled={loading}><Icon name="backup" />立即备份</button>
                   </div>
                 </div>
@@ -1357,9 +1392,8 @@
                   spellCheck="false"
                   className="mono mt-4 min-h-[160px] w-full resize-y rounded-md border border-outline bg-surface-lowest p-4 text-xs leading-6 text-text"
                 />
-                <div className="mt-4 rounded-md bg-surface-lowest p-4">
-                  <p className="micro">USAID API</p>
-                  <p className="mt-2 break-all text-sm text-muted">{runtime?.usaid_endpoint || "等待后台状态"}</p>
+                <div className="mt-4 rounded-md bg-surface-lowest p-4 text-sm text-muted">
+                  当前主看板只接收你粘贴导入的业务 CSV/JSON；外部公开数据仅保留为模型参考，不进入运营展示。
                 </div>
                 <div className="mt-4 overflow-auto">
                   <table className="soft-table w-full min-w-[720px] text-left text-sm">
@@ -1411,19 +1445,20 @@
 
             <section className="grid grid-cols-1 gap-5 2xl:grid-cols-[0.95fr_1.05fr]">
               <div className="card p-5">
-                <h3 className="panel-title">真实运单统计</h3>
+                <h3 className="panel-title">业务批次统计</h3>
                 <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-                  <div className="rounded-md bg-surface-lowest p-4"><p className="micro">平均交付偏差</p><p className="mono mt-2 text-xl font-black text-emerald">{fmt.format(runtime?.external_shipments?.total?.avg_lead_time_days || 0)} 天</p></div>
-                  <div className="rounded-md bg-surface-lowest p-4"><p className="micro">平均运费</p><p className="mono mt-2 text-xl font-black text-amber">{fmt.format(runtime?.external_shipments?.total?.avg_freight_cost_usd || 0)}</p></div>
-                  <div className="rounded-md bg-surface-lowest p-4"><p className="micro">平均重量</p><p className="mono mt-2 text-xl font-black text-emerald">{fmt.format(runtime?.external_shipments?.total?.avg_weight_kg || 0)} kg</p></div>
+                  <div className="rounded-md bg-surface-lowest p-4"><p className="micro">平均全链路交期</p><p className="mono mt-2 text-xl font-black text-emerald">{fmt.format(runtime?.business_records?.total?.avg_lead_time_days || 0)} 天</p></div>
+                  <div className="rounded-md bg-surface-lowest p-4"><p className="micro">总件数</p><p className="mono mt-2 text-xl font-black text-amber">{fmt.format(runtime?.business_records?.total?.piece_count || 0)}</p></div>
+                  <div className="rounded-md bg-surface-lowest p-4"><p className="micro">总体积</p><p className="mono mt-2 text-xl font-black text-emerald">{fmt.format(runtime?.business_records?.total?.cbm || 0)} CBM</p></div>
                 </div>
                 <div className="mt-4 space-y-2">
-                  {(runtime?.external_shipments?.by_mode || []).map((mode) => (
-                    <div key={mode.shipment_mode} className="flex items-center justify-between rounded-md bg-surface-lowest px-4 py-3 text-sm">
-                      <span className="font-bold">{mode.shipment_mode}</span>
-                      <span className="mono text-muted">{mode.count} 条 / {fmt.format(mode.avg_lead_time_days || 0)} 天</span>
+                  {(runtime?.business_records?.by_channel || []).map((mode) => (
+                    <div key={mode.channel_type} className="flex items-center justify-between rounded-md bg-surface-lowest px-4 py-3 text-sm">
+                      <span className="font-bold">{mode.channel_type}</span>
+                      <span className="mono text-muted">{mode.count} 批 / {mode.piece_count} 件</span>
                     </div>
                   ))}
+                  {!(runtime?.business_records?.by_channel || []).length && <div className="rounded-md bg-surface-lowest px-4 py-3 text-sm text-muted">暂无业务批次，请先在上方导入 CSV/JSON。</div>}
                 </div>
               </div>
               <div className="card p-5">
@@ -1587,11 +1622,11 @@
               <Header page={page} channel={channel} setChannel={setChannel} country={country} setCountry={setCountry} anomalyId={anomalyId} setPage={setPage} reset={reset} />
               <main>
                 {page === "overview" && <Overview model={model} setPage={setPage} anomalyId={anomalyId} />}
-                {page === "leadtime" && <LeadTimePage model={model} />}
-                {page === "bottleneck" && <BottleneckPage model={model} />}
-                {page === "routes" && <RoutesPage model={model} maxDays={maxDays} setMaxDays={setMaxDays} />}
-                {page === "exceptions" && <ExceptionsPage anomalyId={anomalyId} inject={inject} reset={reset} model={model} />}
-                {page === "batches" && <BatchesPage model={model} />}
+                {page === "leadtime" && <LeadTimePage model={model} setPage={setPage} />}
+                {page === "bottleneck" && <BottleneckPage model={model} setPage={setPage} />}
+                {page === "routes" && <RoutesPage model={model} maxDays={maxDays} setMaxDays={setMaxDays} setPage={setPage} />}
+                {page === "exceptions" && <ExceptionsPage anomalyId={anomalyId} inject={inject} reset={reset} model={model} setPage={setPage} />}
+                {page === "batches" && <BatchesPage model={model} setPage={setPage} />}
                 {page === "admin" && <AdminPage />}
               </main>
             </div>

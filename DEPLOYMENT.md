@@ -105,6 +105,8 @@ sudo APP_DIR=/opt/lean-logistics-dashboard /opt/lean-logistics-dashboard/scripts
 - 查看和手动执行定时导入/备份任务
 - 查看备份文件与后台操作审计
 
+主看板默认不展示公开样本或派生观测。未导入业务 CSV/JSON 前，总览、时效、瓶颈、路径、异常和线路观测页面会显示空状态；导入后才按 `BUSINESS_UPLOAD` 数据实时计算。
+
 腾讯云安全组需要放行：
 
 - `22`：SSH
