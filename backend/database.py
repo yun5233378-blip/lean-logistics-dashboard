@@ -13,6 +13,7 @@ from .settings import ROOT_DIR, settings
 
 DB_PATH = ROOT_DIR / "lean_logistics.db"
 SEED_PATH = ROOT_DIR / "data" / "real_logistics_seed.json"
+SCMS_SAMPLE_PATH = ROOT_DIR / "data" / "scms_delivery_history_sample.json"
 SCHEMA_VERSION = 3
 
 
@@ -407,6 +408,11 @@ def load_seed() -> dict[str, Any]:
         return json.load(handle)
 
 
+def load_scms_sample() -> dict[str, Any]:
+    with SCMS_SAMPLE_PATH.open("r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
 def seed_data(conn: Any) -> None:
     seed = load_seed()
     seed_sources(conn, seed)
@@ -415,6 +421,7 @@ def seed_data(conn: Any) -> None:
     seed_capacities(conn, seed)
     seed_routes(conn, seed)
     seed_lane_observations(conn, seed)
+    seed_external_shipments(conn)
 
 
 def seed_sources(conn: Any, seed: dict[str, Any]) -> None:
@@ -424,7 +431,8 @@ def seed_sources(conn: Any, seed: dict[str, Any]) -> None:
         usaid["url"] = settings.usaid_shipments_endpoint
         usaid["coverage_note"] = (
             "USAID shipment-level public data exposed through Socrata view mm7d-nzmf. "
-            "Admin imports persist raw shipment rows, lead-time fields, shipment mode, freight cost, and weight."
+            "Admin imports persist raw shipment rows, lead-time fields, shipment mode, freight cost, and weight. "
+            "The runtime seed also includes five public SCMS Delivery History sample rows for offline availability."
         )
         usaid["method_note"] = (
             "Used as a runtime import source when ENABLE_ONLINE_IMPORTS is enabled. "
@@ -554,6 +562,45 @@ def seed_lane_observations(conn: Any, seed: dict[str, Any]) -> None:
             ts_customs_clear, ts_oversea_in, ts_last_mile_del,
             source_id, source_year, source_url, record_type, evidence_note, volume_index
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        rows,
+    )
+
+
+def seed_external_shipments(conn: Any) -> None:
+    sample = load_scms_sample()
+    rows = []
+    for row in sample["rows"]:
+        raw_payload = {
+            **row.get("raw_payload", {}),
+            "sample_source_url": sample["sample_source_url"],
+            "sample_note": sample["note"],
+        }
+        rows.append(
+            (
+                sample["source_id"],
+                row["source_record_id"],
+                row["destination_country"],
+                row["shipment_mode"],
+                row.get("lead_time_days"),
+                row.get("freight_cost_usd"),
+                row.get("line_item_value_usd"),
+                row.get("weight_kg"),
+                row.get("scheduled_delivery_date"),
+                row.get("delivered_to_client_date"),
+                json.dumps(raw_payload, ensure_ascii=False),
+                utc_now(),
+            )
+        )
+
+    executemany(
+        conn,
+        """
+        INSERT INTO external_shipments (
+            source_id, source_record_id, destination_country, shipment_mode,
+            lead_time_days, freight_cost_usd, line_item_value_usd, weight_kg,
+            scheduled_delivery_date, delivered_to_client_date, raw_payload, imported_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         rows,
     )

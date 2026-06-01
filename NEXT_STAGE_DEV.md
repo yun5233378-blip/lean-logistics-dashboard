@@ -5,6 +5,7 @@
 1. 数据模型深化
    - 新增 USAID Supply Chain Shipment Pricing Data 在线导入能力。
    - 新增 `external_shipments` 表，保存真实 shipment-level 目的国、运输方式、交付日期、运费、重量和原始 payload。
+   - 内置 5 条公开 SCMS Delivery History 样本行作为可审计运行时 seed，避免上游 Socrata DNS/访问异常时真实运单统计为空。
    - `/api/sources` 和 `/api/ops/status` 会暴露真实运单统计。
 
 2. PostgreSQL 持久化

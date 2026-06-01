@@ -55,6 +55,7 @@ def main() -> None:
     ops = client.get("/api/ops/status")
     assert ops.status_code == 200, ops.text
     assert "external_shipments" in ops.json()
+    assert ops.json()["external_shipments"]["total"]["count"] >= 5
 
     unauthorized = client.get("/api/admin/runtime")
     assert unauthorized.status_code == 401
@@ -66,6 +67,7 @@ def main() -> None:
     assert runtime_payload["database_backend"] in {"sqlite", "postgresql"}
     assert runtime_payload["model_parameters"]
     assert runtime_payload["users"]
+    assert runtime_payload["external_shipments"]["total"]["count"] >= 5
 
     parameter = client.put(
         "/api/admin/model-parameters/route_cost_weight",

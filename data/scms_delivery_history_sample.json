@@ -1,0 +1,102 @@
+{
+  "source_id": "USAID_SCMS_REFERENCE",
+  "sample_source_url": "https://shashank-sundi.github.io/HEALTH-COMMODITY-SHIPMENT-PRICE-PREDICTION/",
+  "note": "Five public SCMS Delivery History sample rows reproduced in an open analysis notebook. Used as auditable shipment-level seed rows when the Socrata endpoint is unreachable.",
+  "rows": [
+    {
+      "source_record_id": "SCMS-SAMPLE-0001",
+      "destination_country": "Cote d'Ivoire",
+      "shipment_mode": "Air",
+      "scheduled_delivery_date": "2006-06-02",
+      "delivered_to_client_date": "2006-06-02",
+      "lead_time_days": 0,
+      "freight_cost_usd": 780.34,
+      "line_item_value_usd": 551,
+      "weight_kg": 13,
+      "raw_payload": {
+        "id": 1,
+        "project_code": "100-CI-T01",
+        "country": "Cote d'Ivoire",
+        "shipment_mode": "Air",
+        "line_item_quantity": 19,
+        "line_item_value": 551
+      }
+    },
+    {
+      "source_record_id": "SCMS-SAMPLE-0002",
+      "destination_country": "Vietnam",
+      "shipment_mode": "Air",
+      "scheduled_delivery_date": "2006-11-14",
+      "delivered_to_client_date": "2006-11-14",
+      "lead_time_days": 0,
+      "freight_cost_usd": 4521.5,
+      "line_item_value_usd": 6200,
+      "weight_kg": 358,
+      "raw_payload": {
+        "id": 3,
+        "project_code": "108-VN-T01",
+        "country": "Vietnam",
+        "shipment_mode": "Air",
+        "line_item_quantity": 1000,
+        "line_item_value": 6200
+      }
+    },
+    {
+      "source_record_id": "SCMS-SAMPLE-0003",
+      "destination_country": "Cote d'Ivoire",
+      "shipment_mode": "Air",
+      "scheduled_delivery_date": "2006-08-27",
+      "delivered_to_client_date": "2006-08-27",
+      "lead_time_days": 0,
+      "freight_cost_usd": 1653.78,
+      "line_item_value_usd": 40000,
+      "weight_kg": 171,
+      "raw_payload": {
+        "id": 4,
+        "project_code": "100-CI-T01",
+        "country": "Cote d'Ivoire",
+        "shipment_mode": "Air",
+        "line_item_quantity": 500,
+        "line_item_value": 40000
+      }
+    },
+    {
+      "source_record_id": "SCMS-SAMPLE-0004",
+      "destination_country": "Vietnam",
+      "shipment_mode": "Air",
+      "scheduled_delivery_date": "2006-09-01",
+      "delivered_to_client_date": "2006-09-01",
+      "lead_time_days": 0,
+      "freight_cost_usd": 16007.06,
+      "line_item_value_usd": 127360.8,
+      "weight_kg": 1855,
+      "raw_payload": {
+        "id": 15,
+        "project_code": "108-VN-T01",
+        "country": "Vietnam",
+        "shipment_mode": "Air",
+        "line_item_quantity": 31920,
+        "line_item_value": 127360
+      }
+    },
+    {
+      "source_record_id": "SCMS-SAMPLE-0005",
+      "destination_country": "Vietnam",
+      "shipment_mode": "Air",
+      "scheduled_delivery_date": "2006-08-11",
+      "delivered_to_client_date": "2006-08-11",
+      "lead_time_days": 0,
+      "freight_cost_usd": 45450.08,
+      "line_item_value_usd": 121600,
+      "weight_kg": 7590,
+      "raw_payload": {
+        "id": 16,
+        "project_code": "108-VN-T01",
+        "country": "Vietnam",
+        "shipment_mode": "Air",
+        "line_item_quantity": 38000,
+        "line_item_value": 121600
+      }
+    }
+  ]
+}
