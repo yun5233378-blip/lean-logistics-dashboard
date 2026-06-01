@@ -134,6 +134,36 @@ def get_routes() -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
+def get_data_sources() -> list[dict[str, Any]]:
+    rows = fetch_all(
+        """
+        SELECT * FROM data_sources
+        ORDER BY CASE source_id WHEN 'WB_LPI_2022' THEN 0 ELSE 1 END, source_id
+        """
+    )
+    return [dict(row) for row in rows]
+
+
+def get_model_references() -> list[dict[str, Any]]:
+    rows = fetch_all("SELECT * FROM model_references ORDER BY ref_id")
+    return [dict(row) for row in rows]
+
+
+def get_lpi_scores() -> list[dict[str, Any]]:
+    rows = fetch_all("SELECT * FROM lpi_country_scores ORDER BY country")
+    return [dict(row) for row in rows]
+
+
+def build_model_metadata() -> dict[str, Any]:
+    return {
+        "data_mode": "真实公开数据驱动",
+        "runtime_sample_policy": "已移除演示批次；当前运行数据为 World Bank LPI 2022 指标驱动的线路观测与派生诊断。",
+        "sources": get_data_sources(),
+        "model_references": get_model_references(),
+        "lpi_scores": get_lpi_scores(),
+    }
+
+
 def diagnose_bottlenecks(
     channel_type: str | None = None,
     destination: str | None = None,
@@ -251,7 +281,7 @@ def diagnose_bottlenecks(
 
 
 def optimize_route(
-    start_node: str = "深圳工厂",
+    start_node: str = "中国",
     end_node: str = "美东海外仓",
     max_allowed_days: float = 8.0,
     scenario: str = "none",
@@ -313,7 +343,16 @@ def list_batches(
     for idx, row in enumerate(records[: max(limit * 2, limit)]):
         elapsed_days = (parse_dt(row["ts_last_mile_del"]) - parse_dt(row["ts_order_created"])).total_seconds() / 86400
         status_row = stage_status.get(bottleneck_stage, {})
-        risk_score = min(99, 32 + status_row.get("coefficient_of_variation", 0.2) * 80 + status_row.get("load_factor", 0.8) * 22 + (idx % 9) * 2)
+        lpi_pressure = max(0.0, 4.0 - row.get("cbm", 1.0)) * 4
+        elapsed_pressure = min(16.0, elapsed_days * 1.2)
+        risk_score = min(
+            99,
+            30
+            + status_row.get("coefficient_of_variation", 0.2) * 80
+            + status_row.get("load_factor", 0.8) * 22
+            + lpi_pressure
+            + elapsed_pressure,
+        )
         risk = "高风险" if risk_score >= 76 else "中风险" if risk_score >= 58 else "低风险"
         if risk_level and risk_level not in {"全部风险", "全部"} and risk != risk_level:
             continue
@@ -324,12 +363,18 @@ def list_batches(
                 "origin": row["origin"],
                 "destination": row["destination"],
                 "piece_count": row["piece_count"],
+                "volume_index": row.get("volume_index", row["piece_count"]) if isinstance(row, dict) else row["piece_count"],
                 "current_node": stage_names.get(bottleneck_stage, "海外仓"),
                 "elapsed_days": round(elapsed_days, 2),
                 "eta_days": round(max(1.0, 14 - elapsed_days / 2 + (risk_score - 50) / 18), 1),
                 "risk_level": risk,
                 "risk_score": round(risk_score, 1),
                 "issue": f"{stage_names.get(bottleneck_stage, '节点')}积压" if risk == "高风险" else "时效波动" if risk == "中风险" else "正常推进",
+                "source_id": row.get("source_id"),
+                "source_year": row.get("source_year"),
+                "source_url": row.get("source_url"),
+                "record_type": row.get("record_type"),
+                "evidence_note": row.get("evidence_note"),
             }
         )
         if len(batches) >= limit:
@@ -345,6 +390,7 @@ def build_dashboard(
     max_allowed_days: float = 8.0,
 ) -> dict[str, Any]:
     diagnostics = diagnose_bottlenecks(channel_type, destination, scenario)
+    baseline = diagnose_bottlenecks(channel_type, destination, "none")
     route_plan = optimize_route(max_allowed_days=max_allowed_days, scenario=scenario)
     batches = list_batches(channel_type, destination, scenario, limit=20)
     return {
@@ -354,9 +400,11 @@ def build_dashboard(
             "bottleneck_node": diagnostics["summary"]["bottleneck_node"],
             "abnormal_batches": diagnostics["summary"]["abnormal_batches"],
         },
+        "baseline": baseline["summary"],
         "diagnostics": diagnostics,
         "route_plan": route_plan,
         "batches": batches,
+        "model_metadata": build_model_metadata(),
     }
 
 
@@ -460,4 +508,3 @@ def build_advice(bottleneck: dict[str, Any], scenario_cfg: dict[str, Any]) -> st
     if cv > 0.35:
         return f"当前链路瓶颈位于【{node}】，主要风险来自时效波动。建议提高到货预约准确度并设置缓冲库存。"
     return f"当前链路瓶颈位于【{node}】，建议优先保障该节点人员、设备和承运资源，避免局部等待放大全链路交期。"
-

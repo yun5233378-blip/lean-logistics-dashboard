@@ -24,6 +24,12 @@ def main() -> None:
     assert frontend.status_code == 200, frontend.text
     assert "精益物流决策看板" in frontend.text
 
+    sources = client.get("/api/sources")
+    assert sources.status_code == 200, sources.text
+    source_payload = sources.json()
+    assert source_payload["data_mode"] == "真实公开数据驱动"
+    assert any(item["source_id"] == "WB_LPI_2022" for item in source_payload["sources"])
+
     diag = client.get("/api/diagnostics", params={"scenario": "warehouse"})
     assert diag.status_code == 200, diag.text
     payload = diag.json()
@@ -34,11 +40,12 @@ def main() -> None:
     assert route.status_code == 200, route.text
     route_payload = route.json()
     assert route_payload["fallback"] is True
-    assert route_payload["selected_route"]["nodes"][0] == "深圳工厂"
+    assert route_payload["selected_route"]["nodes"][0] == "中国"
 
     dashboard = client.get("/api/dashboard", params={"scenario": "customs", "channel_type": "空运"})
     assert dashboard.status_code == 200, dashboard.text
     assert dashboard.json()["kpis"]["bottleneck_node"]
+    assert dashboard.json()["model_metadata"]["data_mode"] == "真实公开数据驱动"
 
     batches = client.get("/api/batches", params={"risk_level": "高风险", "limit": 10})
     assert batches.status_code == 200, batches.text

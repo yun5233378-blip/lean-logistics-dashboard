@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from .database import init_db
-from .engines import ANOMALIES, build_dashboard, diagnose_bottlenecks, list_batches, optimize_route
+from .engines import ANOMALIES, build_dashboard, build_model_metadata, diagnose_bottlenecks, list_batches, optimize_route
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -71,6 +71,11 @@ def options() -> dict[str, object]:
     }
 
 
+@app.get("/api/sources")
+def sources() -> dict[str, object]:
+    return build_model_metadata()
+
+
 @app.get("/api/dashboard")
 def dashboard(
     channel_type: Annotated[str | None, Query(description="渠道类型：全部渠道/空运/海运/快递")] = "全部渠道",
@@ -92,7 +97,7 @@ def diagnostics(
 
 @app.get("/api/routes/optimize")
 def routes_optimize(
-    start_node: Annotated[str, Query(description="起点节点")] = "深圳工厂",
+    start_node: Annotated[str, Query(description="起点节点")] = "中国",
     end_node: Annotated[str, Query(description="终点节点")] = "美东海外仓",
     max_allowed_days: Annotated[float, Query(ge=1, le=30, description="最大允许交期，单位天")] = 8.0,
     scenario: Annotated[str, Query(description="异常场景")] = "none",
@@ -113,9 +118,9 @@ def batches(
 
 
 @app.post("/api/dev/reset")
-def reset_mock_data() -> dict[str, str]:
+def reset_real_data() -> dict[str, str]:
     init_db(reset=True)
-    return {"status": "ok", "message": "Mock 数据已重置"}
+    return {"status": "ok", "message": "真实公开数据索引已重建"}
 
 
 @app.get("/{full_path:path}", include_in_schema=False)

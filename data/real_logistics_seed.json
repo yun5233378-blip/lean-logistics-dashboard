@@ -1,0 +1,65 @@
+{
+  "dataset_version": 2,
+  "fetched_at": "2026-06-01",
+  "sources": [
+    {
+      "source_id": "WB_LPI_2022",
+      "name": "World Bank Logistics Performance Index 2022",
+      "publisher": "World Bank",
+      "url": "https://api.worldbank.org/v2/source/66",
+      "license": "Creative Commons Attribution 4.0",
+      "coverage_note": "LPI scores use a 1-5 scale. 2022 is the latest non-null year returned by the World Bank API for the selected indicators at collection time.",
+      "method_note": "The World Bank LPI combines six logistics dimensions. The 2023 LPI methodology says scores are averaged from logistics-professional survey responses and the overall score is aggregated with principal components analysis."
+    },
+    {
+      "source_id": "USAID_SCMS_REFERENCE",
+      "name": "USAID Supply Chain Shipment Pricing Data",
+      "publisher": "U.S. Agency for International Development",
+      "url": "https://catalog.data.gov/dataset/supply-chain-shipment-pricing-data-e75ff",
+      "license": "CC BY-ND 4.0 per Data.gov catalog",
+      "coverage_note": "Reference shipment-level dataset for future lane-level lead-time calibration. The catalog describes ARV and HIV lab shipments, pricing, destination countries, and supply-chain expenses.",
+      "method_note": "Not used as runtime seed yet because the source endpoint was not consistently reachable from this workspace during collection; retained as a cited public shipment-data source."
+    }
+  ],
+  "model_references": [
+    {
+      "ref_id": "OR_TOOLS",
+      "name": "Google OR-Tools",
+      "url": "https://github.com/google/or-tools",
+      "use_in_model": "Route optimization is structured as constrained shortest-path / low-cost route selection, aligned with OR-Tools graph and vehicle-routing concepts."
+    },
+    {
+      "ref_id": "VROOM",
+      "name": "VROOM Project",
+      "url": "https://github.com/VROOM-Project/vroom",
+      "use_in_model": "Future route engine candidate. VROOM supports VRP, CVRP, VRPTW, pickup-delivery, custom matrices, and open-source routing backends."
+    },
+    {
+      "ref_id": "PM4PY",
+      "name": "PM4Py Process Mining",
+      "url": "https://github.com/process-intelligence-solutions/pm4py",
+      "use_in_model": "Bottleneck diagnosis uses process-event ideas: per-stage duration, waiting time, variation, and performance ranking."
+    }
+  ],
+  "lpi_scores": [
+    { "country": "中国", "iso3": "CHN", "year": 2022, "overall": 3.7, "customs": 3.3, "infrastructure": 4.0, "international_shipments": 3.6, "logistics_quality": 3.8, "tracking": 3.8, "timeliness": 3.7 },
+    { "country": "美国", "iso3": "USA", "year": 2022, "overall": 3.8, "customs": 3.7, "infrastructure": 3.9, "international_shipments": 3.4, "logistics_quality": 3.9, "tracking": 4.2, "timeliness": 3.8 },
+    { "country": "德国", "iso3": "DEU", "year": 2022, "overall": 4.1, "customs": 3.9, "infrastructure": 4.3, "international_shipments": 3.7, "logistics_quality": 4.2, "tracking": 4.2, "timeliness": 4.1 },
+    { "country": "英国", "iso3": "GBR", "year": 2022, "overall": 3.7, "customs": 3.5, "infrastructure": 3.7, "international_shipments": 3.5, "logistics_quality": 3.7, "tracking": 4.0, "timeliness": 3.7 },
+    { "country": "日本", "iso3": "JPN", "year": 2022, "overall": 3.9, "customs": 3.9, "infrastructure": 4.2, "international_shipments": 3.3, "logistics_quality": 4.1, "tracking": 4.0, "timeliness": 4.0 }
+  ],
+  "lanes": [
+    { "destination": "美国", "channel_type": "空运", "route_family": "air", "base_head_hours": 64, "volume_index": 76 },
+    { "destination": "美国", "channel_type": "海运", "route_family": "sea", "base_head_hours": 216, "volume_index": 124 },
+    { "destination": "美国", "channel_type": "快递", "route_family": "express", "base_head_hours": 52, "volume_index": 58 },
+    { "destination": "德国", "channel_type": "空运", "route_family": "air", "base_head_hours": 72, "volume_index": 68 },
+    { "destination": "德国", "channel_type": "海运", "route_family": "sea", "base_head_hours": 242, "volume_index": 112 },
+    { "destination": "德国", "channel_type": "快递", "route_family": "express", "base_head_hours": 58, "volume_index": 52 },
+    { "destination": "英国", "channel_type": "空运", "route_family": "air", "base_head_hours": 70, "volume_index": 64 },
+    { "destination": "英国", "channel_type": "海运", "route_family": "sea", "base_head_hours": 236, "volume_index": 104 },
+    { "destination": "英国", "channel_type": "快递", "route_family": "express", "base_head_hours": 56, "volume_index": 50 },
+    { "destination": "日本", "channel_type": "空运", "route_family": "air", "base_head_hours": 36, "volume_index": 72 },
+    { "destination": "日本", "channel_type": "海运", "route_family": "sea", "base_head_hours": 92, "volume_index": 96 },
+    { "destination": "日本", "channel_type": "快递", "route_family": "express", "base_head_hours": 30, "volume_index": 60 }
+  ]
+}

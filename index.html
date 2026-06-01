@@ -238,6 +238,13 @@
         background: rgba(35, 41, 60, 0.58);
       }
 
+      .line-clamp-2 {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+
       .bar-track {
         height: 8px;
         border-radius: 999px;
@@ -410,174 +417,14 @@
         日本: { lead: 0.82, risk: -0.02 }
       };
 
-      const baseRoutes = [
-        { from: "深圳工厂", to: "香港机场", carrier: "顺丰空运", time: 0.4, cost: 180, tag: "air" },
-        { from: "香港机场", to: "美西清关", carrier: "国泰货运", time: 2.2, cost: 330, tag: "air" },
-        { from: "美西清关", to: "美东海外仓", carrier: "联邦快线", time: 2.8, cost: 230, tag: "lastmile" },
-        { from: "深圳工厂", to: "盐田港", carrier: "集卡干线", time: 0.6, cost: 45, tag: "sea" },
-        { from: "盐田港", to: "洛杉矶港", carrier: "马士基海运", time: 9.8, cost: 180, tag: "sea" },
-        { from: "洛杉矶港", to: "美西清关", carrier: "港口转运", time: 1.2, cost: 65, tag: "port" },
-        { from: "洛杉矶港", to: "备用海外仓", carrier: "临时保税仓", time: 1.5, cost: 95, tag: "warehouse" },
-        { from: "备用海外仓", to: "美东海外仓", carrier: "跨州卡车", time: 3.7, cost: 175, tag: "lastmile" },
-        { from: "香港机场", to: "芝加哥中转", carrier: "极兔国际", time: 2.7, cost: 350, tag: "express" },
-        { from: "芝加哥中转", to: "美东海外仓", carrier: "区域快运", time: 2.1, cost: 190, tag: "lastmile" },
-        { from: "深圳工厂", to: "铁路口岸", carrier: "中欧班列", time: 5.2, cost: 130, tag: "rail" },
-        { from: "铁路口岸", to: "美东海外仓", carrier: "多式联运", time: 5.4, cost: 260, tag: "lastmile" }
-      ];
-
       const navItems = [
         { id: "overview", label: "总览驾驶舱", icon: "dashboard" },
         { id: "leadtime", label: "时效分析", icon: "timer" },
         { id: "bottleneck", label: "瓶颈诊断", icon: "analytics" },
         { id: "routes", label: "路径优化", icon: "route" },
         { id: "exceptions", label: "异常模拟", icon: "warning" },
-        { id: "batches", label: "批次明细", icon: "list_alt" }
+        { id: "batches", label: "线路观测", icon: "list_alt" }
       ];
-
-      function buildStageMetrics(anomalyId, channel, country) {
-        const anomaly = anomalies[anomalyId];
-        const channelFactor = channelProfiles[channel] || channelProfiles["全部渠道"];
-        const countryFactor = countryProfiles[country] || countryProfiles["全部目的地"];
-        const demandFactor = anomalyId === "none" ? 1 : 1.08;
-
-        const rows = stages.map((stage) => {
-          const multiplier = anomaly.multipliers[stage.id] || 1;
-          const lead = (stage.base * multiplier + (anomaly.waits[stage.id] || 0)) * channelFactor.lead * countryFactor.lead;
-          const wait = (stage.wait + (anomaly.waits[stage.id] || 0)) * Math.max(0.7, channelFactor.lead);
-          const value = stage.value * Math.min(1.08, channelFactor.lead);
-          const cv = clamp(stage.cv + channelFactor.cv + countryFactor.risk + (anomaly.cv[stage.id] || 0), 0.08, 0.86);
-          const demand = Math.round(stage.demand * demandFactor * (anomaly.node === stage.id ? 1.24 : 1));
-          const load = demand / stage.capacity;
-          const takt = 28800 / demand;
-          const cycle = stage.cycle * (anomaly.multipliers[stage.id] || 1) + (anomaly.waits[stage.id] || 0) * 1.8;
-          const wip = Math.round(stage.baseWip + (anomaly.wip[stage.id] || 0) + (load > 1 ? (load - 1) * 900 : 0));
-          const score = cycle / takt * 0.5 + cv / 0.42 * 0.25 + load * 0.25;
-
-          return {
-            ...stage,
-            lead,
-            wait,
-            value,
-            cv,
-            demand,
-            load,
-            takt,
-            cycle,
-            wip,
-            score
-          };
-        });
-
-        const bottleneck = rows.reduce((max, row) => row.score > max.score ? row : max, rows[0]);
-        return rows.map((row) => ({
-          ...row,
-          status: row.id === bottleneck.id ? "瓶颈" : row.score > 1.05 || row.load > 0.96 || row.cv > 0.38 ? "预警" : "正常"
-        }));
-      }
-
-      function buildRoutes(anomalyId, maxDays) {
-        const anomaly = anomalies[anomalyId];
-        const adjusted = baseRoutes.map((edge) => {
-          const extra = anomaly.route[edge.tag] || 0;
-          const nodeExtra = edge.to === "美西清关" ? (anomaly.route.customs || 0) : 0;
-          return {
-            ...edge,
-            time: edge.time + extra + nodeExtra,
-            cost: Math.round(edge.cost * (1 + (extra > 0 ? 0.06 : 0)))
-          };
-        });
-
-        const graph = adjusted.reduce((acc, edge) => {
-          if (!acc[edge.from]) acc[edge.from] = [];
-          acc[edge.from].push(edge);
-          return acc;
-        }, {});
-
-        const paths = [];
-        const visit = (node, route, seen) => {
-          if (node === "美东海外仓") {
-            const time = route.reduce((sum, edge) => sum + edge.time, 0);
-            const cost = route.reduce((sum, edge) => sum + edge.cost, 0);
-            const carriers = [...new Set(route.map((edge) => edge.carrier))];
-            paths.push({ nodes: ["深圳工厂", ...route.map((edge) => edge.to)], route, time, cost, carriers });
-            return;
-          }
-          (graph[node] || []).forEach((edge) => {
-            if (!seen.has(edge.to)) {
-              visit(edge.to, [...route, edge], new Set([...seen, edge.to]));
-            }
-          });
-        };
-
-        visit("深圳工厂", [], new Set(["深圳工厂"]));
-
-        const fastest = [...paths].sort((a, b) => a.time - b.time)[0];
-        const cheapest = [...paths].sort((a, b) => a.cost - b.cost)[0];
-        const feasible = paths.filter((path) => path.time <= maxDays).sort((a, b) => a.cost - b.cost || a.time - b.time);
-        const best = feasible[0] || fastest;
-        const fallback = feasible.length === 0;
-        const maxCost = Math.max(...paths.map((path) => path.cost));
-        const maxTime = Math.max(...paths.map((path) => path.time));
-        const minCost = Math.min(...paths.map((path) => path.cost));
-        const minTime = Math.min(...paths.map((path) => path.time));
-        const recommended = [...paths].sort((a, b) => {
-          const scoreA = (a.cost - minCost) / (maxCost - minCost || 1) * 0.45 + (a.time - minTime) / (maxTime - minTime || 1) * 0.4 + (a.time > maxDays ? 0.6 : 0);
-          const scoreB = (b.cost - minCost) / (maxCost - minCost || 1) * 0.45 + (b.time - minTime) / (maxTime - minTime || 1) * 0.4 + (b.time > maxDays ? 0.6 : 0);
-          return scoreA - scoreB;
-        })[0];
-
-        return { paths, best, fastest, cheapest, recommended, feasibleCount: feasible.length, fallback };
-      }
-
-      function buildBatches(metrics, anomalyId) {
-        const anomaly = anomalies[anomalyId];
-        const channels = ["空运", "海运", "快递"];
-        const countries = ["美国", "德国", "英国", "日本"];
-        const currentNodes = metrics.map((stage) => stage.short);
-        return Array.from({ length: 34 }).map((_, index) => {
-          const stage = metrics[(index * 2 + (anomaly.node ? 2 : 0)) % metrics.length];
-          const drift = Math.sin(index * 1.7) * 0.12 + (stage.status === "瓶颈" ? 0.32 : stage.status === "预警" ? 0.16 : 0);
-          const riskScore = clamp(34 + stage.cv * 80 + stage.load * 18 + drift * 50, 18, 96);
-          const risk = riskScore >= 76 ? "高风险" : riskScore >= 58 ? "中风险" : "低风险";
-          const usedHours = metrics.slice(0, (index % metrics.length) + 1).reduce((sum, item) => sum + item.lead, 0) * (0.76 + (index % 5) * 0.07);
-          return {
-            id: `LL-${String(2600 + index).padStart(4, "0")}`,
-            channel: channels[index % channels.length],
-            country: countries[(index + 1) % countries.length],
-            node: currentNodes[(index + (stage.status === "瓶颈" ? 1 : 0)) % currentNodes.length],
-            elapsed: usedHours / 24,
-            eta: 3 + (index % 8) + (risk === "高风险" ? 3 : risk === "中风险" ? 1 : 0),
-            risk,
-            riskScore,
-            issue: risk === "高风险" ? `${stage.short}积压` : risk === "中风险" ? "时效波动" : "正常推进"
-          };
-        });
-      }
-
-      function useLocalModel(anomalyId, channel, country, maxDays) {
-        return useMemo(() => {
-          const metrics = buildStageMetrics(anomalyId, channel, country);
-          const totalHours = metrics.reduce((sum, stage) => sum + stage.lead, 0);
-          const waitHours = metrics.reduce((sum, stage) => sum + stage.wait, 0);
-          const valueHours = metrics.reduce((sum, stage) => sum + stage.value, 0);
-          const bottleneck = metrics.find((stage) => stage.status === "瓶颈");
-          const batches = buildBatches(metrics, anomalyId);
-          const routes = buildRoutes(anomalyId, maxDays);
-          const highRisk = batches.filter((batch) => batch.risk === "高风险").length;
-          const warnRisk = batches.filter((batch) => batch.risk !== "低风险").length;
-          return {
-            metrics,
-            totalDays: totalHours / 24,
-            waitHours,
-            varRatio: valueHours / totalHours * 100,
-            bottleneck,
-            batches,
-            highRisk,
-            warnRisk,
-            routes
-          };
-        }, [anomalyId, channel, country, maxDays]);
-      }
 
       const apiStageIds = {
         Domestic_PickPack: { id: "domestic", icon: "warehouse" },
@@ -641,7 +488,13 @@
           eta: batch.eta_days,
           risk: batch.risk_level,
           riskScore: batch.risk_score,
-          issue: batch.issue
+          issue: batch.issue,
+          volumeIndex: batch.volume_index || batch.piece_count,
+          sourceId: batch.source_id,
+          sourceYear: batch.source_year,
+          sourceUrl: batch.source_url,
+          recordType: batch.record_type,
+          evidence: batch.evidence_note
         }));
         const highRisk = batches.filter((batch) => batch.risk === "高风险").length;
         const warnRisk = batches.filter((batch) => batch.risk !== "低风险").length;
@@ -653,11 +506,13 @@
           varRatio: summary.value_added_ratio || 0,
           bottleneck,
           batches,
-          highRisk: summary.abnormal_batches || highRisk,
+          highRisk,
           warnRisk,
           tocAdvice: summary.toc_advice,
+          baselineDays: payload.baseline?.avg_lead_time_days,
           scenarioSummary: diagnostics.scenario?.summary,
           routeMessage: routePlan.message,
+          modelMetadata: payload.model_metadata,
           routes: {
             best: normalizeApiRoute(routePlan.selected_route),
             fastest: normalizeApiRoute(routePlan.fastest_route),
@@ -672,7 +527,6 @@
       }
 
       function useModel(anomalyId, channel, country, maxDays) {
-        const localModel = useLocalModel(anomalyId, channel, country, maxDays);
         const [remote, setRemote] = useState({ model: null, loading: false, error: "" });
 
         useEffect(() => {
@@ -693,14 +547,43 @@
             .then((payload) => setRemote({ model: normalizeApiModel(payload), loading: false, error: "" }))
             .catch((error) => {
               if (error.name !== "AbortError") {
-                setRemote({ model: null, loading: false, error: "后端暂不可用，已切换本地沙盘模型" });
+                setRemote({ model: null, loading: false, error: "后端暂不可用，真实公开数据暂未加载" });
               }
             });
 
           return () => controller.abort();
         }, [anomalyId, channel, country, maxDays]);
 
-        return remote.model ? { ...remote.model, loading: remote.loading, error: remote.error } : { ...localModel, source: "local", loading: remote.loading, error: remote.error };
+        return remote.model ? { ...remote.model, loading: remote.loading, error: remote.error } : emptyModel(remote.loading, remote.error);
+      }
+
+      function emptyModel(loading, error) {
+        const metrics = stages.map((stage) => ({
+          ...stage,
+          lead: 0,
+          wait: 0,
+          value: 0,
+          demand: 0,
+          load: 0,
+          takt: 0,
+          cycle: 0,
+          wip: 0,
+          status: "正常"
+        }));
+        return {
+          metrics,
+          totalDays: 0,
+          waitHours: 0,
+          varRatio: 0,
+          bottleneck: metrics[0],
+          batches: [],
+          highRisk: 0,
+          warnRisk: 0,
+          routes: { best: null, fastest: null, cheapest: null, recommended: null, paths: [], feasibleCount: 0, fallback: false },
+          source: "api",
+          loading,
+          error
+        };
       }
 
       function Icon({ name, className = "" }) {
@@ -805,7 +688,7 @@
       }
 
       function ProcessFlow({ metrics, compact = false }) {
-        const maxLead = Math.max(...metrics.map((item) => item.lead));
+        const maxLead = Math.max(1, ...metrics.map((item) => item.lead));
         return (
           <div className={`grid gap-3 ${compact ? "grid-cols-1" : "grid-cols-1 xl:grid-cols-5"}`}>
             {metrics.map((stage, index) => {
@@ -834,7 +717,7 @@
       }
 
       function Radar({ metrics }) {
-        const bottleneck = metrics.find((item) => item.status === "瓶颈");
+        const bottleneck = metrics.find((item) => item.status === "瓶颈") || metrics[0] || stages[0];
         const values = [
           clamp(bottleneck.lead / bottleneck.target * 42, 12, 88),
           clamp(bottleneck.load * 64, 18, 92),
@@ -924,8 +807,8 @@
                 <p className="mono text-lg font-black text-emerald">{fmt.format(route.time)} 天</p>
               </div>
               <div className="rounded-md bg-surface-lowest p-3">
-                <p className="micro">预计成本</p>
-                <p className="mono text-lg font-black text-amber">{route.cost} 美元</p>
+                <p className="micro">成本指数</p>
+                <p className="mono text-lg font-black text-amber">{route.cost} 点</p>
               </div>
               <div className="rounded-md bg-surface-lowest p-3">
                 <p className="micro">承运组合</p>
@@ -938,7 +821,7 @@
       }
 
       function RouteGraph({ route }) {
-        const nodes = route?.nodes || ["深圳工厂", "香港机场", "美西清关", "美东海外仓"];
+        const nodes = route?.nodes || ["中国", "香港机场", "美西清关", "美东海外仓"];
         const xGap = 520 / Math.max(1, nodes.length - 1);
         return (
           <svg viewBox="0 0 600 170" className="h-48 w-full rounded-md bg-surface-lowest">
@@ -1011,7 +894,7 @@
               <MetricCard title="平均全链路交期" value={fmt.format(model.totalDays)} suffix="天" icon="timer" hint="较目标偏差" tone={model.totalDays > 9 ? "bad" : "normal"} onClick={() => setPage("leadtime")} />
               <MetricCard title="增值时间比率" value={fmt.format(model.varRatio)} suffix="%" icon="percent" hint="越高越稳" tone={model.varRatio < 34 ? "warn" : "normal"} onClick={() => setPage("leadtime")} />
               <MetricCard title="当前瓶颈节点" value={model.bottleneck.short} icon="analytics" hint="约束理论判定" tone="bad" onClick={() => setPage("bottleneck")} />
-              <MetricCard title="异常批次数" value={model.highRisk} suffix="批" icon="warning" hint={`${model.warnRisk} 批需关注`} tone={model.highRisk > 8 ? "bad" : "warn"} onClick={() => setPage("batches")} />
+              <MetricCard title="高风险观测" value={model.highRisk} suffix="条" icon="warning" hint={`${model.warnRisk} 条需关注`} tone={model.highRisk > 8 ? "bad" : "warn"} onClick={() => setPage("batches")} />
             </section>
 
             <section className="grid grid-cols-1 gap-5 2xl:grid-cols-[1.45fr_0.85fr]">
@@ -1049,10 +932,10 @@
               <div className="card p-5">
                 <h3 className="panel-title">推荐物流路线</h3>
                 <div className="mt-4 rounded-md bg-surface-lowest p-4">
-                  <p className="font-black">{route.nodes.join(" → ")}</p>
+                  <p className="font-black">{route ? route.nodes.join(" → ") : "等待真实数据加载"}</p>
                   <div className="mt-3 grid grid-cols-2 gap-3">
-                    <span className="micro">预计 {fmt.format(route.time)} 天</span>
-                    <span className="micro">成本 {route.cost} 美元</span>
+                    <span className="micro">预计 {fmt.format(route?.time || 0)} 天</span>
+                    <span className="micro">成本指数 {route?.cost || 0} 点</span>
                   </div>
                 </div>
               </div>
@@ -1066,6 +949,25 @@
                     </div>
                   ))}
                 </div>
+              </div>
+            </section>
+
+            <section className="card p-5">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <h3 className="panel-title">数据与模型依据</h3>
+                  <p className="micro mt-1">{model.modelMetadata?.runtime_sample_policy || "正在加载真实公开数据来源"}</p>
+                </div>
+                <span className="rounded-full border border-emerald/40 bg-emerald/10 px-3 py-1 text-xs font-black text-emerald">{model.modelMetadata?.data_mode || "API 数据"}</span>
+              </div>
+              <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-3">
+                {(model.modelMetadata?.sources || []).slice(0, 3).map((source) => (
+                  <a key={source.source_id} href={source.url} target="_blank" className="rounded-md border border-outline bg-surface-lowest p-4 transition hover:border-emerald">
+                    <p className="text-sm font-black">{source.name}</p>
+                    <p className="micro mt-2">{source.publisher}</p>
+                    <p className="mt-3 line-clamp-2 text-xs text-muted">{source.coverage_note}</p>
+                  </a>
+                ))}
               </div>
             </section>
           </div>
@@ -1104,11 +1006,11 @@
               </div>
             </section>
             <section className="card p-5">
-              <h3 className="panel-title">批次样本流转</h3>
+              <h3 className="panel-title">真实来源线路观测</h3>
               <div className="mt-4 overflow-auto">
                 <table className="soft-table w-full min-w-[760px] text-left text-sm">
                   <thead className="bg-surface-lowest text-muted">
-                    <tr><th className="px-4 py-3">批次号</th><th className="px-4 py-3">渠道</th><th className="px-4 py-3">目的地</th><th className="px-4 py-3">当前节点</th><th className="px-4 py-3">已耗时</th><th className="px-4 py-3">风险</th></tr>
+                    <tr><th className="px-4 py-3">观测编号</th><th className="px-4 py-3">渠道</th><th className="px-4 py-3">目的地</th><th className="px-4 py-3">当前节点</th><th className="px-4 py-3">已耗时</th><th className="px-4 py-3">风险</th></tr>
                   </thead>
                   <tbody>
                     {model.batches.slice(0, 8).map((batch) => (
@@ -1156,7 +1058,7 @@
                 </div>
                 <div className="mt-4 space-y-3">
                   <div className="rounded-md bg-surface-lowest p-3 text-sm">优先保护瓶颈节点，不让瓶颈停机等待。</div>
-                  <div className="rounded-md bg-surface-lowest p-3 text-sm">将高风险批次转入备用队列，减少混批查找时间。</div>
+                  <div className="rounded-md bg-surface-lowest p-3 text-sm">将高风险线路观测转入备用队列，减少跨节点等待扩散。</div>
                   <div className="rounded-md bg-surface-lowest p-3 text-sm">下调前序放行节奏，避免积压继续扩散。</div>
                 </div>
               </div>
@@ -1224,7 +1126,7 @@
       }
 
       function ExceptionsPage({ anomalyId, inject, reset, model }) {
-        const beforeDays = buildStageMetrics("none", "全部渠道", "全部目的地").reduce((sum, item) => sum + item.lead, 0) / 24;
+        const beforeDays = model.baselineDays || model.totalDays;
         return (
           <div className="page-pad space-y-5">
             <section className="grid grid-cols-1 gap-5 xl:grid-cols-[0.8fr_1.2fr]">
@@ -1264,26 +1166,26 @@
       function BatchesPage({ model }) {
         const [risk, setRisk] = useState("全部风险");
         const [query, setQuery] = useState("");
-        const filtered = model.batches.filter((batch) => (risk === "全部风险" || batch.risk === risk) && (query.trim() === "" || batch.id.includes(query.trim()) || batch.node.includes(query.trim())));
+        const filtered = model.batches.filter((batch) => (risk === "全部风险" || batch.risk === risk) && (query.trim() === "" || batch.id.includes(query.trim()) || batch.node.includes(query.trim()) || batch.country.includes(query.trim())));
         return (
           <div className="page-pad space-y-5">
             <section className="card p-5">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
-                  <h3 className="panel-title">批次明细</h3>
-                  <p className="micro">共 {filtered.length} 个批次，按风险等级和当前节点筛选</p>
+                  <h3 className="panel-title">线路观测明细</h3>
+                  <p className="micro">共 {filtered.length} 条公开数据驱动观测，按风险等级和当前节点筛选</p>
                 </div>
                 <div className="flex gap-3">
-                  <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索批次或节点" className="h-9 rounded-md border border-outline bg-surface-low px-3 text-sm text-text" />
+                  <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索观测、国家或节点" className="h-9 rounded-md border border-outline bg-surface-low px-3 text-sm text-text" />
                   <select value={risk} onChange={(event) => setRisk(event.target.value)} className="h-9 rounded-md border border-outline bg-surface-low px-3 text-sm text-text">
                     {["全部风险", "高风险", "中风险", "低风险"].map((item) => <option key={item}>{item}</option>)}
                   </select>
                 </div>
               </div>
               <div className="mt-5 overflow-auto">
-                <table className="soft-table w-full min-w-[980px] text-left text-sm">
+                <table className="soft-table w-full min-w-[1180px] text-left text-sm">
                   <thead className="bg-surface-lowest text-muted">
-                    <tr><th className="px-4 py-3">批次号</th><th className="px-4 py-3">渠道</th><th className="px-4 py-3">目的地</th><th className="px-4 py-3">当前节点</th><th className="px-4 py-3">已耗时</th><th className="px-4 py-3">预计妥投</th><th className="px-4 py-3">风险等级</th><th className="px-4 py-3">异常原因</th></tr>
+                    <tr><th className="px-4 py-3">观测编号</th><th className="px-4 py-3">渠道</th><th className="px-4 py-3">目的地</th><th className="px-4 py-3">货量指数</th><th className="px-4 py-3">当前节点</th><th className="px-4 py-3">已耗时</th><th className="px-4 py-3">预计妥投</th><th className="px-4 py-3">风险等级</th><th className="px-4 py-3">数据依据</th></tr>
                   </thead>
                   <tbody>
                     {filtered.map((batch) => (
@@ -1291,11 +1193,12 @@
                         <td className="mono px-4 py-3 font-black">{batch.id}</td>
                         <td className="px-4 py-3">{batch.channel}</td>
                         <td className="px-4 py-3">{batch.country}</td>
+                        <td className="mono px-4 py-3">{batch.volumeIndex}</td>
                         <td className="px-4 py-3">{batch.node}</td>
                         <td className="mono px-4 py-3">{fmt.format(batch.elapsed)} 天</td>
                         <td className="mono px-4 py-3">{fmt.format(batch.eta)} 天后</td>
                         <td className="px-4 py-3"><StatusBadge status={batch.risk} /></td>
-                        <td className="px-4 py-3 text-muted">{batch.issue}</td>
+                        <td className="px-4 py-3 text-muted">{batch.sourceId} / {batch.sourceYear}</td>
                       </tr>
                     ))}
                   </tbody>
