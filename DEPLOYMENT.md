@@ -91,6 +91,20 @@ sudo systemctl status lean-logistics-dashboard --no-pager
 sudo journalctl -u lean-logistics-dashboard -f
 ```
 
+定时任务检查：
+
+```bash
+sudo cat /etc/cron.d/lean-logistics-dashboard
+sudo APP_DIR=/opt/lean-logistics-dashboard /opt/lean-logistics-dashboard/scripts/run_scheduled_job.sh nightly_database_backup
+```
+
+后台管理页现在支持：
+
+- 粘贴 CSV/JSON 业务运单数据并写入 `fulfillment_records`
+- 校准 TOC 节点日产能和目标处理时长
+- 查看和手动执行定时导入/备份任务
+- 查看备份文件与后台操作审计
+
 腾讯云安全组需要放行：
 
 - `22`：SSH

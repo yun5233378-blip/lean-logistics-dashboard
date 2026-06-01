@@ -12,7 +12,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 apt-get update
-apt-get install -y python3 python3-venv python3-pip git nginx postgresql-client
+apt-get install -y python3 python3-venv python3-pip git nginx postgresql-client cron
 
 mkdir -p "${APP_DIR}"
 if [ ! -d "${APP_DIR}/.git" ]; then
@@ -41,6 +41,7 @@ ENV
 fi
 mkdir -p "${APP_DIR}/backups"
 chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}/backups"
+chmod +x "${APP_DIR}/scripts/"*.sh
 
 sudo -u "${APP_USER}" python3 -m venv "${APP_DIR}/.venv"
 sudo -u "${APP_USER}" "${APP_DIR}/.venv/bin/pip" install --upgrade pip
@@ -50,6 +51,9 @@ cp "${APP_DIR}/deploy/tencent/lean-logistics-dashboard.service" /etc/systemd/sys
 systemctl daemon-reload
 systemctl enable lean-logistics-dashboard
 systemctl restart lean-logistics-dashboard
+systemctl enable cron
+systemctl restart cron
+bash "${APP_DIR}/scripts/install_schedules_cron.sh"
 
 echo "Service started. Check status with:"
 echo "  systemctl status lean-logistics-dashboard --no-pager"

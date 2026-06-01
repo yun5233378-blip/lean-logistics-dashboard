@@ -30,11 +30,13 @@ ENV
 fi
 mkdir -p "${APP_DIR}/backups"
 chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}/backups"
+chmod +x "${APP_DIR}/scripts/"*.sh
 bash "${APP_DIR}/scripts/backup_database.sh" || true
 sudo -u "${APP_USER}" "${APP_DIR}/.venv/bin/pip" install -r "${APP_DIR}/requirements.txt"
 cp "${APP_DIR}/deploy/tencent/lean-logistics-dashboard.service" /etc/systemd/system/lean-logistics-dashboard.service
 systemctl daemon-reload
 systemctl restart lean-logistics-dashboard
+bash "${APP_DIR}/scripts/install_schedules_cron.sh" || true
 
 echo "Deploy complete."
 systemctl status lean-logistics-dashboard --no-pager

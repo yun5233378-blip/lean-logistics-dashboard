@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sqlite3
+import subprocess
 from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Sequence
+from urllib.parse import unquote, urlparse
 
 from .settings import ROOT_DIR, settings
 
@@ -127,6 +130,8 @@ def drop_tables(conn: Any) -> None:
         f"""
         DROP TABLE IF EXISTS external_shipments{suffix};
         DROP TABLE IF EXISTS import_jobs{suffix};
+        DROP TABLE IF EXISTS audit_logs{suffix};
+        DROP TABLE IF EXISTS operational_schedules{suffix};
         DROP TABLE IF EXISTS model_parameters{suffix};
         DROP TABLE IF EXISTS app_users{suffix};
         DROP TABLE IF EXISTS fulfillment_records{suffix};
@@ -282,6 +287,29 @@ def create_sqlite_tables(conn: Any) -> None:
             raw_payload TEXT NOT NULL,
             imported_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS audit_logs (
+            log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            actor_id TEXT NOT NULL,
+            action TEXT NOT NULL,
+            target_type TEXT NOT NULL,
+            target_id TEXT,
+            status TEXT NOT NULL,
+            detail TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS operational_schedules (
+            schedule_id TEXT PRIMARY KEY,
+            job_type TEXT NOT NULL,
+            cron_hint TEXT NOT NULL,
+            enabled INTEGER NOT NULL,
+            last_run_at TEXT,
+            last_status TEXT,
+            next_run_hint TEXT NOT NULL,
+            notes TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
         """,
     )
 
@@ -407,6 +435,29 @@ def create_postgres_tables(conn: Any) -> None:
             raw_payload TEXT NOT NULL,
             imported_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS audit_logs (
+            log_id SERIAL PRIMARY KEY,
+            actor_id TEXT NOT NULL,
+            action TEXT NOT NULL,
+            target_type TEXT NOT NULL,
+            target_id TEXT,
+            status TEXT NOT NULL,
+            detail TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS operational_schedules (
+            schedule_id TEXT PRIMARY KEY,
+            job_type TEXT NOT NULL,
+            cron_hint TEXT NOT NULL,
+            enabled INTEGER NOT NULL,
+            last_run_at TEXT,
+            last_status TEXT,
+            next_run_hint TEXT NOT NULL,
+            notes TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
         """,
     )
 
@@ -453,6 +504,17 @@ def seed_sources(conn: Any, seed: dict[str, Any]) -> None:
             "Used as a runtime import source when ENABLE_ONLINE_IMPORTS is enabled. "
             "If the upstream endpoint is unreachable, existing imported rows remain available."
         )
+    sources.append(
+        {
+            "source_id": "BUSINESS_UPLOAD",
+            "name": "Business shipment upload",
+            "publisher": "Tenant operations team",
+            "url": "user-upload://fulfillment-records",
+            "license": "Internal operational data",
+            "coverage_note": "CSV/JSON shipment milestone records imported through the admin console.",
+            "method_note": "Records are validated, normalized, and upserted into fulfillment_records for live lead-time and TOC diagnostics.",
+        }
+    )
 
     executemany(
         conn,
@@ -694,6 +756,8 @@ def seed_default_admin_config(conn: Any) -> None:
         ("route_cost_weight", "0.45", "number", "路径综合评分中的成本权重。"),
         ("route_time_weight", "0.40", "number", "路径综合评分中的时效权重。"),
         ("usaid_default_import_limit", str(settings.default_import_limit), "integer", "后台导入 USAID shipment 数据的默认条数。"),
+        ("business_import_max_rows", "2000", "integer", "后台单次业务 CSV/JSON 导入允许的最大行数。"),
+        ("backup_retention_days", "14", "integer", "生产备份建议保留天数。"),
     ]
     for row in parameters:
         execute(conn, insert_ignore_sql("model_parameters", "key", 5), (*row, now))
@@ -701,11 +765,41 @@ def seed_default_admin_config(conn: Any) -> None:
     execute(conn, insert_ignore_sql("app_users", "user_id", 6), ("admin", "系统管理员", "owner", "全部项目", "active", now))
     execute(conn, insert_ignore_sql("app_users", "user_id", 6), ("planner", "物流计划员", "planner", "线路观测与路径优化", "active", now))
 
+    schedules = [
+        (
+            "daily_usaid_import",
+            "usaid_import",
+            "0 2 * * *",
+            0,
+            None,
+            None,
+            "每日 02:00",
+            "定时拉取 USAID 公开 shipment 数据；云端 DNS 不通时会记录失败并保留旧数据。",
+            now,
+        ),
+        (
+            "nightly_database_backup",
+            "database_backup",
+            "30 2 * * *",
+            1,
+            None,
+            None,
+            "每日 02:30",
+            "生成数据库逻辑备份，配合服务器 cron 或 systemd timer 使用。",
+            now,
+        ),
+    ]
+    for row in schedules:
+        execute(conn, insert_ignore_sql("operational_schedules", "schedule_id", 9), row)
+
 
 def insert_ignore_sql(table: str, conflict_column: str, value_count: int) -> str:
     columns = {
         "model_parameters": "key, value, value_type, description, updated_at",
         "app_users": "user_id, display_name, role, project_scope, status, created_at",
+        "operational_schedules": (
+            "schedule_id, job_type, cron_hint, enabled, last_run_at, last_status, next_run_hint, notes, updated_at"
+        ),
     }[table]
     placeholders = ", ".join("?" for _ in range(value_count))
     if is_postgres():
@@ -837,10 +931,79 @@ def upsert_external_shipments(rows: Iterable[dict[str, Any]]) -> int:
     return len(normalized)
 
 
+def upsert_fulfillment_records(rows: Iterable[dict[str, Any]]) -> int:
+    normalized = [
+        (
+            row["batch_no"],
+            row.get("channel_type") or "未分类",
+            row.get("origin") or "未知起点",
+            row.get("destination") or "未知目的地",
+            int(row.get("piece_count") or 1),
+            float(row.get("cbm") or 0.01),
+            row["ts_order_created"],
+            row["ts_domestic_out"],
+            row["ts_head_arrive"],
+            row["ts_customs_clear"],
+            row["ts_oversea_in"],
+            row["ts_last_mile_del"],
+            row.get("source_id") or "BUSINESS_UPLOAD",
+            int(row.get("source_year") or datetime.now(timezone.utc).year),
+            row.get("source_url") or "user-upload://fulfillment-records",
+            row.get("record_type") or "业务导入运单",
+            row.get("evidence_note") or "由后台 CSV/JSON 业务数据导入。",
+            int(row.get("volume_index") or row.get("piece_count") or 1),
+        )
+        for row in rows
+    ]
+    if not normalized:
+        return 0
+
+    execute_many_write(
+        """
+        INSERT INTO fulfillment_records (
+            batch_no, channel_type, origin, destination, piece_count, cbm,
+            ts_order_created, ts_domestic_out, ts_head_arrive,
+            ts_customs_clear, ts_oversea_in, ts_last_mile_del,
+            source_id, source_year, source_url, record_type, evidence_note, volume_index
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (batch_no) DO UPDATE SET
+            channel_type = excluded.channel_type,
+            origin = excluded.origin,
+            destination = excluded.destination,
+            piece_count = excluded.piece_count,
+            cbm = excluded.cbm,
+            ts_order_created = excluded.ts_order_created,
+            ts_domestic_out = excluded.ts_domestic_out,
+            ts_head_arrive = excluded.ts_head_arrive,
+            ts_customs_clear = excluded.ts_customs_clear,
+            ts_oversea_in = excluded.ts_oversea_in,
+            ts_last_mile_del = excluded.ts_last_mile_del,
+            source_id = excluded.source_id,
+            source_year = excluded.source_year,
+            source_url = excluded.source_url,
+            record_type = excluded.record_type,
+            evidence_note = excluded.evidence_note,
+            volume_index = excluded.volume_index
+        """,
+        normalized,
+    )
+    return len(normalized)
+
+
 def create_backup() -> dict[str, Any]:
     settings.backup_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     if is_postgres():
+        target = settings.backup_dir / f"lean-logistics-{stamp}.sql"
+        dump_result = run_pg_dump(target)
+        if dump_result["ok"]:
+            return {
+                "path": str(target),
+                "filename": target.name,
+                "size_bytes": target.stat().st_size if target.exists() else 0,
+                "database_backend": "postgresql",
+                "mode": "logical-dump",
+            }
         manifest = settings.backup_dir / f"postgres-backup-{stamp}.json"
         manifest.write_text(
             json.dumps(
@@ -848,20 +1011,80 @@ def create_backup() -> dict[str, Any]:
                     "created_at": stamp,
                     "database_backend": "postgresql",
                     "note": "Use pg_dump with DATABASE_URL on the server for a full logical backup.",
+                    "pg_dump_error": dump_result["error"],
                 },
                 ensure_ascii=False,
                 indent=2,
             ),
             encoding="utf-8",
         )
-        return {"path": str(manifest), "database_backend": "postgresql", "mode": "manifest"}
+        return {
+            "path": str(manifest),
+            "filename": manifest.name,
+            "size_bytes": manifest.stat().st_size,
+            "database_backend": "postgresql",
+            "mode": "manifest",
+        }
 
     target = settings.backup_dir / f"lean_logistics-{stamp}.db"
     if DB_PATH.exists():
         shutil.copy2(DB_PATH, target)
     else:
         target.write_bytes(b"")
-    return {"path": str(target), "database_backend": "sqlite", "mode": "file-copy"}
+    return {
+        "path": str(target),
+        "filename": target.name,
+        "size_bytes": target.stat().st_size,
+        "database_backend": "sqlite",
+        "mode": "file-copy",
+    }
+
+
+def run_pg_dump(target: Path) -> dict[str, Any]:
+    parsed = urlparse(normalize_pg_url(settings.database_url))
+    if not parsed.hostname or not parsed.username or not parsed.path:
+        return {"ok": False, "error": "DATABASE_URL is incomplete"}
+    env = os.environ.copy()
+    env["PGPASSWORD"] = unquote(parsed.password or "")
+    command = [
+        "pg_dump",
+        "-h",
+        parsed.hostname,
+        "-p",
+        str(parsed.port or 5432),
+        "-U",
+        unquote(parsed.username),
+        "-d",
+        parsed.path.lstrip("/"),
+        "-f",
+        str(target),
+    ]
+    try:
+        subprocess.run(command, check=True, capture_output=True, text=True, env=env, timeout=60)
+        return {"ok": True, "error": None}
+    except FileNotFoundError:
+        return {"ok": False, "error": "pg_dump not found"}
+    except subprocess.SubprocessError as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def list_backup_files(limit: int = 20) -> list[dict[str, Any]]:
+    settings.backup_dir.mkdir(parents=True, exist_ok=True)
+    files = [path for path in settings.backup_dir.iterdir() if path.is_file()]
+    files.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+    items = []
+    for path in files[:limit]:
+        stat = path.stat()
+        items.append(
+            {
+                "filename": path.name,
+                "path": str(path),
+                "size_bytes": stat.st_size,
+                "modified_at": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(timespec="seconds"),
+                "kind": path.suffix.lstrip(".") or "file",
+            }
+        )
+    return items
 
 
 def utc_now() -> str:

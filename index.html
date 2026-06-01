@@ -1212,19 +1212,26 @@
 
       function AdminPage() {
         const [token, setToken] = useState(localStorage.getItem("lean_admin_token") || "");
+        const [adminUser, setAdminUser] = useState(localStorage.getItem("lean_admin_user") || "admin");
         const [runtime, setRuntime] = useState(null);
         const [loading, setLoading] = useState(false);
         const [notice, setNotice] = useState("");
         const [error, setError] = useState("");
+        const [businessContent, setBusinessContent] = useState([
+          "batch_no,channel_type,origin,destination,piece_count,cbm,ts_order_created,ts_domestic_out,ts_head_arrive,ts_customs_clear,ts_oversea_in,ts_last_mile_del",
+          "BIZ-SZ-US-001,空运,深圳,美国,42,1.6,2026-05-01T08:00:00,2026-05-01T18:00:00,2026-05-05T09:00:00,2026-05-06T12:00:00,2026-05-07T15:00:00,2026-05-09T11:00:00"
+        ].join("\n"));
 
         const adminHeaders = () => ({
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
+          "Authorization": `Bearer ${token}`,
+          "X-Admin-User": adminUser || "admin"
         });
 
         const persistToken = () => {
           localStorage.setItem("lean_admin_token", token);
-          setNotice("管理员 Token 已保存");
+          localStorage.setItem("lean_admin_user", adminUser || "admin");
+          setNotice("管理员凭据已保存");
         };
 
         const loadRuntime = () => {
@@ -1273,6 +1280,12 @@
           body: JSON.stringify({ limit: Number(runtime?.model_parameters?.find((item) => item.key === "usaid_default_import_limit")?.value || 80) })
         }));
 
+        const importBusiness = () => runAction("业务数据导入", () => fetch("/api/admin/data/import/business", {
+          method: "POST",
+          headers: adminHeaders(),
+          body: JSON.stringify({ format: "csv", content: businessContent })
+        }));
+
         const backupNow = () => runAction("备份", () => fetch("/api/admin/backup", { method: "POST", headers: adminHeaders() }));
         const resetIndex = () => runAction("重建数据索引", () => fetch("/api/admin/data/reset", { method: "POST", headers: adminHeaders() }));
 
@@ -1282,15 +1295,33 @@
           body: JSON.stringify({ value })
         }));
 
+        const saveCapacity = (nodeId, dailyCapacity, targetLeadTime) => runAction("节点产能保存", () => fetch(`/api/admin/node-capacities/${nodeId}`, {
+          method: "PUT",
+          headers: adminHeaders(),
+          body: JSON.stringify({ daily_capacity: Number(dailyCapacity), target_lead_time: Number(targetLeadTime) })
+        }));
+
+        const saveSchedule = (scheduleId, enabled) => runAction("定时任务保存", () => fetch(`/api/admin/schedules/${scheduleId}`, {
+          method: "PUT",
+          headers: adminHeaders(),
+          body: JSON.stringify({ enabled })
+        }));
+
+        const runSchedule = (scheduleId) => runAction("定时任务执行", () => fetch(`/api/admin/schedules/${scheduleId}/run`, {
+          method: "POST",
+          headers: adminHeaders()
+        }));
+
         return (
           <div className="page-pad space-y-5">
             <section className="card p-5">
               <div className="flex flex-wrap items-end justify-between gap-4">
                 <div>
                   <h3 className="panel-title">后台管理</h3>
-                  <p className="micro mt-1">生产配置、真实数据导入、模型参数和访问角色</p>
+                  <p className="micro mt-1">生产配置、真实业务数据导入、模型校准、审计和试运行任务</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  <input value={adminUser} onChange={(event) => setAdminUser(event.target.value)} placeholder="操作者" className="h-9 w-28 rounded-md border border-outline bg-surface-low px-3 text-sm text-text" />
                   <input value={token} onChange={(event) => setToken(event.target.value)} type="password" placeholder="管理员 Token" className="h-9 rounded-md border border-outline bg-surface-low px-3 text-sm text-text" />
                   <button className="btn" onClick={persistToken}><Icon name="key" />保存</button>
                   <button className="btn btn-primary" onClick={loadRuntime} disabled={loading}><Icon name="sync" />刷新</button>
@@ -1305,9 +1336,9 @@
 
             <section className="grid grid-cols-1 gap-5 xl:grid-cols-4">
               <MetricCard title="数据库后端" value={runtime?.database_backend || "未连接"} icon="database" hint="DATABASE_URL 控制" tone="normal" />
-              <MetricCard title="真实运单" value={runtime?.external_shipments?.total?.count || 0} suffix="条" icon="dataset" hint="USAID shipment 数据" tone="normal" />
+              <MetricCard title="真实运单" value={runtime?.external_shipments?.total?.count || 0} suffix="条" icon="dataset" hint="USAID/业务导入数据" tone="normal" />
               <MetricCard title="导入任务" value={runtime?.imports?.length || 0} suffix="次" icon="cloud_download" hint="最近任务记录" tone="warn" />
-              <MetricCard title="权限模式" value={runtime?.auth_mode || "待验证"} icon="shield_lock" hint="Bearer Token" tone="normal" />
+              <MetricCard title="审计事件" value={runtime?.audit_logs?.length || 0} suffix="条" icon="history" hint={runtime?.auth_mode || "Bearer Token"} tone="normal" />
             </section>
 
             <section className="grid grid-cols-1 gap-5 2xl:grid-cols-[1fr_1fr]">
@@ -1315,11 +1346,17 @@
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <h3 className="panel-title">数据源导入</h3>
                   <div className="flex gap-2">
+                    <button className="btn btn-primary" onClick={importBusiness} disabled={loading}><Icon name="upload_file" />导入业务数据</button>
                     <button className="btn" onClick={importUsaid} disabled={loading}><Icon name="cloud_download" />导入 USAID</button>
                     <button className="btn" onClick={backupNow} disabled={loading}><Icon name="backup" />立即备份</button>
-                    <button className="btn btn-danger" onClick={resetIndex} disabled={loading}><Icon name="restart_alt" />重建索引</button>
                   </div>
                 </div>
+                <textarea
+                  value={businessContent}
+                  onChange={(event) => setBusinessContent(event.target.value)}
+                  spellCheck="false"
+                  className="mono mt-4 min-h-[160px] w-full resize-y rounded-md border border-outline bg-surface-lowest p-4 text-xs leading-6 text-text"
+                />
                 <div className="mt-4 rounded-md bg-surface-lowest p-4">
                   <p className="micro">USAID API</p>
                   <p className="mt-2 break-all text-sm text-muted">{runtime?.usaid_endpoint || "等待后台状态"}</p>
@@ -1332,7 +1369,7 @@
                     <tbody>
                       {(runtime?.imports || []).map((job) => (
                         <tr key={job.job_id}>
-                          <td className="mono px-4 py-3">{job.job_id}</td>
+                          <td className="mono px-4 py-3">{job.job_id} / {job.source_id}</td>
                           <td className="px-4 py-3">{job.status}</td>
                           <td className="mono px-4 py-3">{job.imported_count}</td>
                           <td className="px-4 py-3 text-muted">{job.finished_at || "运行中"}</td>
@@ -1353,7 +1390,68 @@
               </div>
             </section>
 
+            <section className="grid grid-cols-1 gap-5 2xl:grid-cols-[1fr_1fr]">
+              <div className="card p-5">
+                <h3 className="panel-title">TOC 节点产能校准</h3>
+                <div className="mt-4 space-y-3">
+                  {(runtime?.node_capacities || []).map((node) => (
+                    <CapacityRow key={node.node_id} node={node} saveCapacity={saveCapacity} />
+                  ))}
+                </div>
+              </div>
+              <div className="card p-5">
+                <h3 className="panel-title">定时导入与备份</h3>
+                <div className="mt-4 space-y-3">
+                  {(runtime?.schedules || []).map((schedule) => (
+                    <ScheduleRow key={schedule.schedule_id} schedule={schedule} saveSchedule={saveSchedule} runSchedule={runSchedule} loading={loading} />
+                  ))}
+                </div>
+              </div>
+            </section>
+
             <section className="grid grid-cols-1 gap-5 2xl:grid-cols-[0.95fr_1.05fr]">
+              <div className="card p-5">
+                <h3 className="panel-title">真实运单统计</h3>
+                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <div className="rounded-md bg-surface-lowest p-4"><p className="micro">平均交付偏差</p><p className="mono mt-2 text-xl font-black text-emerald">{fmt.format(runtime?.external_shipments?.total?.avg_lead_time_days || 0)} 天</p></div>
+                  <div className="rounded-md bg-surface-lowest p-4"><p className="micro">平均运费</p><p className="mono mt-2 text-xl font-black text-amber">{fmt.format(runtime?.external_shipments?.total?.avg_freight_cost_usd || 0)}</p></div>
+                  <div className="rounded-md bg-surface-lowest p-4"><p className="micro">平均重量</p><p className="mono mt-2 text-xl font-black text-emerald">{fmt.format(runtime?.external_shipments?.total?.avg_weight_kg || 0)} kg</p></div>
+                </div>
+                <div className="mt-4 space-y-2">
+                  {(runtime?.external_shipments?.by_mode || []).map((mode) => (
+                    <div key={mode.shipment_mode} className="flex items-center justify-between rounded-md bg-surface-lowest px-4 py-3 text-sm">
+                      <span className="font-bold">{mode.shipment_mode}</span>
+                      <span className="mono text-muted">{mode.count} 条 / {fmt.format(mode.avg_lead_time_days || 0)} 天</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="card p-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h3 className="panel-title">备份与恢复</h3>
+                  <button className="btn btn-danger" onClick={resetIndex} disabled={loading}><Icon name="restart_alt" />重建公开索引</button>
+                </div>
+                <div className="mt-4 overflow-auto">
+                  <table className="soft-table w-full min-w-[760px] text-left text-sm">
+                    <thead className="bg-surface-lowest text-muted">
+                      <tr><th className="px-4 py-3">文件</th><th className="px-4 py-3">类型</th><th className="px-4 py-3">大小</th><th className="px-4 py-3">时间</th></tr>
+                    </thead>
+                    <tbody>
+                      {(runtime?.backups || []).map((backup) => (
+                        <tr key={backup.filename}>
+                          <td className="mono px-4 py-3">{backup.filename}</td>
+                          <td className="px-4 py-3">{backup.kind}</td>
+                          <td className="mono px-4 py-3">{Math.round((backup.size_bytes || 0) / 1024)} KB</td>
+                          <td className="px-4 py-3 text-muted">{backup.modified_at}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </section>
+
+            <section className="grid grid-cols-1 gap-5 2xl:grid-cols-[0.9fr_1.1fr]">
               <div className="card p-5">
                 <h3 className="panel-title">访问角色</h3>
                 <div className="mt-4 overflow-auto">
@@ -1375,22 +1473,68 @@
                 </div>
               </div>
               <div className="card p-5">
-                <h3 className="panel-title">真实运单统计</h3>
-                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-                  <div className="rounded-md bg-surface-lowest p-4"><p className="micro">平均交付偏差</p><p className="mono mt-2 text-xl font-black text-emerald">{fmt.format(runtime?.external_shipments?.total?.avg_lead_time_days || 0)} 天</p></div>
-                  <div className="rounded-md bg-surface-lowest p-4"><p className="micro">平均运费</p><p className="mono mt-2 text-xl font-black text-amber">{fmt.format(runtime?.external_shipments?.total?.avg_freight_cost_usd || 0)}</p></div>
-                  <div className="rounded-md bg-surface-lowest p-4"><p className="micro">平均重量</p><p className="mono mt-2 text-xl font-black text-emerald">{fmt.format(runtime?.external_shipments?.total?.avg_weight_kg || 0)} kg</p></div>
-                </div>
-                <div className="mt-4 space-y-2">
-                  {(runtime?.external_shipments?.by_mode || []).map((mode) => (
-                    <div key={mode.shipment_mode} className="flex items-center justify-between rounded-md bg-surface-lowest px-4 py-3 text-sm">
-                      <span className="font-bold">{mode.shipment_mode}</span>
-                      <span className="mono text-muted">{mode.count} 条 / {fmt.format(mode.avg_lead_time_days || 0)} 天</span>
-                    </div>
-                  ))}
+                <h3 className="panel-title">操作审计</h3>
+                <div className="mt-4 overflow-auto">
+                  <table className="soft-table w-full min-w-[860px] text-left text-sm">
+                    <thead className="bg-surface-lowest text-muted">
+                      <tr><th className="px-4 py-3">时间</th><th className="px-4 py-3">操作者</th><th className="px-4 py-3">动作</th><th className="px-4 py-3">对象</th><th className="px-4 py-3">状态</th></tr>
+                    </thead>
+                    <tbody>
+                      {(runtime?.audit_logs || []).map((log) => (
+                        <tr key={log.log_id}>
+                          <td className="px-4 py-3 text-muted">{log.created_at}</td>
+                          <td className="px-4 py-3 font-bold">{log.actor_id}</td>
+                          <td className="mono px-4 py-3">{log.action}</td>
+                          <td className="px-4 py-3">{log.target_type}{log.target_id ? ` / ${log.target_id}` : ""}</td>
+                          <td className="px-4 py-3">{log.status}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </section>
+          </div>
+        );
+      }
+
+      function CapacityRow({ node, saveCapacity }) {
+        const [dailyCapacity, setDailyCapacity] = useState(node.daily_capacity);
+        const [targetLeadTime, setTargetLeadTime] = useState(node.target_lead_time);
+        return (
+          <div className="rounded-md border border-outline bg-surface-lowest p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-black text-text">{node.node_name}</p>
+                <p className="mono mt-1 text-xs text-muted">{node.node_id}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <input value={dailyCapacity} onChange={(event) => setDailyCapacity(event.target.value)} type="number" className="h-9 w-28 rounded-md border border-outline bg-surface-low px-3 text-sm text-text" />
+                <input value={targetLeadTime} onChange={(event) => setTargetLeadTime(event.target.value)} type="number" step="0.1" className="h-9 w-28 rounded-md border border-outline bg-surface-low px-3 text-sm text-text" />
+                <button className="btn" onClick={() => saveCapacity(node.node_id, dailyCapacity, targetLeadTime)}><Icon name="tune" />校准</button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      function ScheduleRow({ schedule, saveSchedule, runSchedule, loading }) {
+        const enabled = Boolean(Number(schedule.enabled));
+        return (
+          <div className="rounded-md border border-outline bg-surface-lowest p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="mono text-sm font-black text-emerald">{schedule.schedule_id}</p>
+                <p className="mt-1 text-xs text-muted">{schedule.notes}</p>
+                <p className="mono mt-2 text-xs text-muted">{schedule.cron_hint} / {schedule.next_run_hint}</p>
+              </div>
+              <div className="flex gap-2">
+                <button className={`btn ${enabled ? "btn-primary" : ""}`} onClick={() => saveSchedule(schedule.schedule_id, !enabled)}>
+                  <Icon name={enabled ? "toggle_on" : "toggle_off"} />{enabled ? "启用" : "停用"}
+                </button>
+                <button className="btn" onClick={() => runSchedule(schedule.schedule_id)} disabled={loading}><Icon name="play_arrow" />执行</button>
+              </div>
+            </div>
           </div>
         );
       }

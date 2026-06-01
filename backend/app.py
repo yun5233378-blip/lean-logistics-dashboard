@@ -10,7 +10,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from .admin import backup_now, create_user, list_users, rebuild_data_index, runtime_status, update_model_parameter
+from .admin import (
+    backup_now,
+    create_user,
+    list_audit_logs,
+    list_backup_files,
+    list_operational_schedules,
+    list_users,
+    rebuild_data_index,
+    run_operational_schedule,
+    runtime_status,
+    update_model_parameter,
+    update_node_capacity,
+    update_operational_schedule,
+    write_audit_log,
+)
+from .business_imports import import_business_records
 from .database import init_db
 from .engines import ANOMALIES, build_dashboard, build_model_metadata, diagnose_bottlenecks, list_batches, optimize_route
 from .integrations import import_usaid_shipments
@@ -65,9 +80,28 @@ class ImportRequest(BaseModel):
     limit: int | None = Field(default=None, ge=1, le=5000)
 
 
+class BusinessImportRequest(BaseModel):
+    format: str = Field(default="json", pattern=r"^(csv|json)$")
+    content: str | None = Field(default=None, max_length=2_000_000)
+    records: list[dict[str, Any]] | None = None
+
+
+class CapacityUpdate(BaseModel):
+    daily_capacity: int = Field(ge=1, le=200000)
+    target_lead_time: float = Field(gt=0, le=720)
+
+
+class ScheduleUpdate(BaseModel):
+    enabled: bool | None = None
+    cron_hint: str | None = Field(default=None, min_length=3, max_length=80)
+    next_run_hint: str | None = Field(default=None, min_length=1, max_length=80)
+    notes: str | None = Field(default=None, min_length=1, max_length=400)
+
+
 def require_admin(
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
     x_admin_token: Annotated[str | None, Header(alias="X-Admin-Token")] = None,
+    x_admin_user: Annotated[str | None, Header(alias="X-Admin-User")] = None,
 ) -> dict[str, str]:
     token = x_admin_token
     if authorization and authorization.lower().startswith("bearer "):
@@ -77,7 +111,7 @@ def require_admin(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="需要管理员 Token 才能访问后台接口。",
         )
-    return {"role": "admin", "auth_mode": settings.auth_mode}
+    return {"role": "admin", "auth_mode": settings.auth_mode, "user_id": x_admin_user or "admin"}
 
 
 @app.on_event("startup")
@@ -187,12 +221,36 @@ def admin_runtime(_: Annotated[dict[str, str], Depends(require_admin)]) -> dict[
 def admin_update_parameter(
     key: str,
     payload: ParameterUpdate,
-    _: Annotated[dict[str, str], Depends(require_admin)],
+    admin: Annotated[dict[str, str], Depends(require_admin)],
 ) -> dict[str, Any]:
     try:
-        return update_model_parameter(key, payload.value)
+        result = update_model_parameter(key, payload.value)
+        write_audit_log(admin["user_id"], "update_model_parameter", "model_parameter", key, detail={"value": payload.value})
+        return result
     except KeyError as exc:
+        write_audit_log(admin["user_id"], "update_model_parameter", "model_parameter", key, status="failed", detail="not found")
         raise HTTPException(status_code=404, detail="模型参数不存在") from exc
+
+
+@app.put("/api/admin/node-capacities/{node_id}")
+def admin_update_capacity(
+    node_id: str,
+    payload: CapacityUpdate,
+    admin: Annotated[dict[str, str], Depends(require_admin)],
+) -> dict[str, Any]:
+    try:
+        result = update_node_capacity(node_id, payload.daily_capacity, payload.target_lead_time)
+        write_audit_log(
+            admin["user_id"],
+            "update_node_capacity",
+            "node_capacity",
+            node_id,
+            detail={"daily_capacity": payload.daily_capacity, "target_lead_time": payload.target_lead_time},
+        )
+        return result
+    except KeyError as exc:
+        write_audit_log(admin["user_id"], "update_node_capacity", "node_capacity", node_id, status="failed", detail="not found")
+        raise HTTPException(status_code=404, detail="节点产能不存在") from exc
 
 
 @app.get("/api/admin/users")
@@ -203,30 +261,96 @@ def admin_users(_: Annotated[dict[str, str], Depends(require_admin)]) -> dict[st
 @app.post("/api/admin/users")
 def admin_create_user(
     payload: UserCreate,
-    _: Annotated[dict[str, str], Depends(require_admin)],
+    admin: Annotated[dict[str, str], Depends(require_admin)],
 ) -> dict[str, Any]:
     try:
-        return create_user(payload.user_id, payload.display_name, payload.role, payload.project_scope)
+        result = create_user(payload.user_id, payload.display_name, payload.role, payload.project_scope)
+        write_audit_log(admin["user_id"], "create_user", "app_user", payload.user_id, detail=payload.dict())
+        return result
     except Exception as exc:
+        write_audit_log(admin["user_id"], "create_user", "app_user", payload.user_id, status="failed", detail=str(exc))
         raise HTTPException(status_code=409, detail="用户已存在或字段不合法") from exc
 
 
 @app.post("/api/admin/data/import/usaid")
 def admin_import_usaid(
     payload: ImportRequest,
-    _: Annotated[dict[str, str], Depends(require_admin)],
+    admin: Annotated[dict[str, str], Depends(require_admin)],
 ) -> dict[str, Any]:
-    return import_usaid_shipments(payload.limit)
+    result = import_usaid_shipments(payload.limit)
+    write_audit_log(admin["user_id"], "import_usaid_shipments", "data_import", str(result.get("job_id")), result.get("status", "success"), result)
+    return result
+
+
+@app.post("/api/admin/data/import/business")
+def admin_import_business(
+    payload: BusinessImportRequest,
+    admin: Annotated[dict[str, str], Depends(require_admin)],
+) -> dict[str, Any]:
+    result = import_business_records(payload.dict(), actor_id=admin["user_id"])
+    write_audit_log(admin["user_id"], "import_business_records", "data_import", str(result.get("job_id")), result.get("status", "success"), result)
+    return result
 
 
 @app.post("/api/admin/data/reset")
-def admin_reset_data(_: Annotated[dict[str, str], Depends(require_admin)]) -> dict[str, str]:
-    return rebuild_data_index()
+def admin_reset_data(admin: Annotated[dict[str, str], Depends(require_admin)]) -> dict[str, str]:
+    result = rebuild_data_index()
+    write_audit_log(admin["user_id"], "reset_data_index", "database", None, detail=result)
+    return result
 
 
 @app.post("/api/admin/backup")
-def admin_backup(_: Annotated[dict[str, str], Depends(require_admin)]) -> dict[str, Any]:
-    return backup_now()
+def admin_backup(admin: Annotated[dict[str, str], Depends(require_admin)]) -> dict[str, Any]:
+    result = backup_now()
+    write_audit_log(admin["user_id"], "create_backup", "backup", result.get("filename"), detail=result)
+    return result
+
+
+@app.get("/api/admin/backups")
+def admin_backups(_: Annotated[dict[str, str], Depends(require_admin)]) -> dict[str, Any]:
+    return {"items": list_backup_files()}
+
+
+@app.get("/api/admin/audit-logs")
+def admin_audit_logs(_: Annotated[dict[str, str], Depends(require_admin)]) -> dict[str, Any]:
+    return {"items": list_audit_logs()}
+
+
+@app.get("/api/admin/schedules")
+def admin_schedules(_: Annotated[dict[str, str], Depends(require_admin)]) -> dict[str, Any]:
+    return {"items": list_operational_schedules()}
+
+
+@app.put("/api/admin/schedules/{schedule_id}")
+def admin_update_schedule(
+    schedule_id: str,
+    payload: ScheduleUpdate,
+    admin: Annotated[dict[str, str], Depends(require_admin)],
+) -> dict[str, Any]:
+    try:
+        result = update_operational_schedule(
+            schedule_id,
+            enabled=payload.enabled,
+            cron_hint=payload.cron_hint,
+            next_run_hint=payload.next_run_hint,
+            notes=payload.notes,
+        )
+        write_audit_log(admin["user_id"], "update_schedule", "operational_schedule", schedule_id, detail=payload.dict(exclude_none=True))
+        return result
+    except KeyError as exc:
+        write_audit_log(admin["user_id"], "update_schedule", "operational_schedule", schedule_id, status="failed", detail="not found")
+        raise HTTPException(status_code=404, detail="运维任务不存在") from exc
+
+
+@app.post("/api/admin/schedules/{schedule_id}/run")
+def admin_run_schedule(schedule_id: str, admin: Annotated[dict[str, str], Depends(require_admin)]) -> dict[str, Any]:
+    try:
+        result = run_operational_schedule(schedule_id)
+        write_audit_log(admin["user_id"], "run_schedule", "operational_schedule", schedule_id, detail=result)
+        return result
+    except KeyError as exc:
+        write_audit_log(admin["user_id"], "run_schedule", "operational_schedule", schedule_id, status="failed", detail="not found")
+        raise HTTPException(status_code=404, detail="运维任务不存在") from exc
 
 
 @app.get("/{full_path:path}", include_in_schema=False)
