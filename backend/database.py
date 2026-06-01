@@ -85,6 +85,7 @@ def init_db(reset: bool = False) -> None:
             drop_tables(conn)
 
         create_tables(conn)
+        refresh_reference_data(conn)
         has_data = execute(conn, "SELECT COUNT(*) AS count FROM fulfillment_records").fetchone()["count"] > 0
         if not has_data:
             seed_data(conn)
@@ -417,13 +418,20 @@ def load_scms_sample() -> dict[str, Any]:
 
 def seed_data(conn: Any) -> None:
     seed = load_seed()
-    seed_sources(conn, seed)
-    seed_model_references(conn, seed)
-    seed_lpi_scores(conn, seed)
     seed_capacities(conn, seed)
     seed_routes(conn, seed)
     seed_lane_observations(conn, seed)
     seed_external_shipments(conn)
+
+
+def refresh_reference_data(conn: Any) -> None:
+    seed = load_seed()
+    execute(conn, "DELETE FROM data_sources")
+    execute(conn, "DELETE FROM model_references")
+    execute(conn, "DELETE FROM lpi_country_scores")
+    seed_sources(conn, seed)
+    seed_model_references(conn, seed)
+    seed_lpi_scores(conn, seed)
 
 
 def seed_sources(conn: Any, seed: dict[str, Any]) -> None:
