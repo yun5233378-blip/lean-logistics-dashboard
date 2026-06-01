@@ -418,6 +418,7 @@
       };
 
       const navItems = [
+        { id: "guide", label: "使用指引", icon: "menu_book" },
         { id: "overview", label: "总览驾驶舱", icon: "dashboard" },
         { id: "leadtime", label: "时效分析", icon: "timer" },
         { id: "bottleneck", label: "瓶颈诊断", icon: "analytics" },
@@ -616,7 +617,12 @@
                   <div className="rounded-md bg-surface-lowest p-4"><p className="font-bold">2. 粘贴业务 CSV</p><p className="micro mt-2">字段包含批次号和节点时间</p></div>
                   <div className="rounded-md bg-surface-lowest p-4"><p className="font-bold">3. 查看诊断</p><p className="micro mt-2">系统按你的数据实时计算</p></div>
                 </div>
-                {setPage && <button className="btn btn-primary mt-6" onClick={() => setPage("admin")}><Icon name="admin_panel_settings" />去后台导入</button>}
+                {setPage && (
+                  <div className="mt-6 flex flex-wrap gap-2">
+                    <button className="btn btn-primary" onClick={() => setPage("admin")}><Icon name="admin_panel_settings" />去后台导入</button>
+                    <button className="btn" onClick={() => setPage("guide")}><Icon name="menu_book" />查看指引</button>
+                  </div>
+                )}
               </div>
             </section>
           </div>
@@ -1592,6 +1598,152 @@
         );
       }
 
+      function GuidePage({ setPage }) {
+        const workflow = [
+          { icon: "vpn_key", title: "准备后台权限", text: "进入后台管理，填写管理员 Token 和操作者名称。Token 只保存在本机浏览器，不会展示在页面上。" },
+          { icon: "table_view", title: "整理业务数据", text: "把 WMS/TMS/ERP 或 Excel 导出的运单整理成 CSV/JSON，至少包含批次号、渠道、目的地、件数、体积、创建时间和妥投时间。" },
+          { icon: "upload_file", title: "导入业务批次", text: "在后台“数据源导入”粘贴 CSV/JSON 并点击导入。只有 source_id=BUSINESS_UPLOAD 的数据会进入主看板。" },
+          { icon: "tune", title: "校准模型参数", text: "按你的业务口径调整 TOC 阈值、路线成本/时效权重、节点日产能和目标处理时长。" },
+          { icon: "analytics", title: "查看诊断结果", text: "总览、时效、瓶颈、路径和异常模拟会根据你导入的数据实时计算，不再展示公开样本。" },
+          { icon: "verified", title: "试运行与留痕", text: "每次导入、参数调整、备份和定时任务都会进入审计日志，便于后续复盘和交接。" }
+        ];
+        const fields = [
+          ["batch_no", "批次/运单唯一编号", "必填"],
+          ["channel_type", "空运、海运、快递等渠道", "建议"],
+          ["origin / destination", "起点和目的地", "必填"],
+          ["piece_count / cbm", "件数和体积", "必填"],
+          ["ts_order_created", "订单创建时间", "必填"],
+          ["ts_domestic_out", "国内仓出库时间", "建议"],
+          ["ts_head_arrive", "头程到达时间", "建议"],
+          ["ts_customs_clear", "清关完成时间", "建议"],
+          ["ts_oversea_in", "海外仓入库/上架时间", "建议"],
+          ["ts_last_mile_del", "尾程妥投时间", "必填"]
+        ];
+        const modules = [
+          { icon: "dashboard", title: "总览驾驶舱", text: "看平均交期、增值比、瓶颈节点和高风险批次，适合每日晨会快速判断链路状态。" },
+          { icon: "timer", title: "时效分析", text: "把全链路拆成国内仓、头程、清关、海外仓、尾程，区分等待时间和增值时间。" },
+          { icon: "analytics", title: "瓶颈诊断", text: "用节拍时间、实际周期、CV 和负荷率诊断物理瓶颈，并给出 TOC 建议。" },
+          { icon: "route", title: "路径优化", text: "根据期望交期约束，在候选路线里做成本/时效折中；无解时走最快兜底路线。" },
+          { icon: "warning", title: "异常模拟", text: "注入清关、爆仓、港口拥堵、尾程延迟，观察瓶颈迁移和路径推荐变化。" },
+          { icon: "admin_panel_settings", title: "后台管理", text: "负责业务导入、参数校准、产能校准、备份、定时任务和审计日志。" }
+        ];
+        const principles = [
+          { title: "精益物流", text: "识别等待、返工和排队，把全链路交期拆成增值时间与非增值等待时间。" },
+          { title: "TOC 约束理论", text: "整条链路的产出由最弱节点决定，诊断目标是找到当前真正限制系统的节点。" },
+          { title: "Takt Time", text: "用可用工作时间除以需求量，得到系统应满足的节拍，再和实际周期对比。" },
+          { title: "CV 变异系数", text: "用标准差除以均值衡量波动，波动越大，节点越容易形成隐性排队和失控风险。" },
+          { title: "运筹优化", text: "把路线视为图，用交期约束下的最低成本路径和综合评分路径推荐承运方案。" },
+          { title: "异常压力测试", text: "通过改变节点耗时、波动和 WIP，观察瓶颈是否迁移，提前准备备用策略。" }
+        ];
+        const sampleCsv = [
+          "batch_no,channel_type,origin,destination,piece_count,cbm,ts_order_created,ts_domestic_out,ts_head_arrive,ts_customs_clear,ts_oversea_in,ts_last_mile_del",
+          "BIZ-SZ-US-001,空运,深圳,美国,42,1.6,2026-05-01T08:00:00,2026-05-01T18:00:00,2026-05-05T09:00:00,2026-05-06T12:00:00,2026-05-07T15:00:00,2026-05-09T11:00:00"
+        ].join("\n");
+        return (
+          <div className="page-pad space-y-5">
+            <section className="card grid-bg p-6">
+              <div className="flex flex-wrap items-end justify-between gap-5">
+                <div className="max-w-3xl">
+                  <p className="micro">从空看板到可运营试运行</p>
+                  <h3 className="mt-2 text-3xl font-black text-text">系统使用步骤指引</h3>
+                  <p className="mt-3 leading-7 text-muted">
+                    这个系统现在只展示你导入的业务批次。公开数据、开源项目和 LPI 指标只用于模型依据说明，不进入主看板运营统计。
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button className="btn btn-primary" onClick={() => setPage("admin")}><Icon name="upload_file" />去导入数据</button>
+                  <button className="btn" onClick={() => setPage("overview")}><Icon name="dashboard" />看总览</button>
+                </div>
+              </div>
+            </section>
+
+            <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+              {workflow.map((step, index) => (
+                <div key={step.title} className="card p-5">
+                  <div className="flex items-center gap-3">
+                    <span className="grid h-10 w-10 place-items-center rounded-md bg-emerald/10 text-emerald"><Icon name={step.icon} /></span>
+                    <div>
+                      <p className="micro">步骤 {index + 1}</p>
+                      <h4 className="font-black">{step.title}</h4>
+                    </div>
+                  </div>
+                  <p className="mt-4 text-sm leading-7 text-muted">{step.text}</p>
+                </div>
+              ))}
+            </section>
+
+            <section className="grid grid-cols-1 gap-5 2xl:grid-cols-[1fr_1fr]">
+              <div className="card p-5">
+                <h3 className="panel-title">业务 CSV 字段说明</h3>
+                <div className="mt-4 overflow-auto">
+                  <table className="soft-table w-full min-w-[680px] text-left text-sm">
+                    <thead className="bg-surface-lowest text-muted">
+                      <tr><th className="px-4 py-3">字段</th><th className="px-4 py-3">含义</th><th className="px-4 py-3">要求</th></tr>
+                    </thead>
+                    <tbody>
+                      {fields.map((field) => (
+                        <tr key={field[0]}>
+                          <td className="mono px-4 py-3 font-black text-emerald">{field[0]}</td>
+                          <td className="px-4 py-3">{field[1]}</td>
+                          <td className="px-4 py-3"><StatusBadge status={field[2] === "必填" ? "预警" : "正常"} /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div className="card p-5">
+                <h3 className="panel-title">可直接粘贴的 CSV 示例</h3>
+                <pre className="mono mt-4 overflow-auto rounded-md border border-outline bg-surface-lowest p-4 text-xs leading-6 text-muted">{sampleCsv}</pre>
+                <div className="mt-4 rounded-md bg-surface-lowest p-4 text-sm leading-7 text-muted">
+                  如果你只有创建时间和妥投时间，也可以先导入；系统会按全链路时长派生中间节点时间。正式试运行建议补齐每个节点时间。
+                </div>
+              </div>
+            </section>
+
+            <section className="card p-5">
+              <h3 className="panel-title">每个页面怎么看</h3>
+              <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-3">
+                {modules.map((item) => (
+                  <button key={item.title} className="rounded-md border border-outline bg-surface-lowest p-4 text-left transition hover:border-emerald" onClick={() => setPage(navItems.find((nav) => nav.label === item.title)?.id || "guide")}>
+                    <div className="flex items-center gap-3">
+                      <Icon name={item.icon} className="text-emerald" />
+                      <span className="font-black">{item.title}</span>
+                    </div>
+                    <p className="mt-3 text-sm leading-6 text-muted">{item.text}</p>
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section className="grid grid-cols-1 gap-5 2xl:grid-cols-[1.1fr_0.9fr]">
+              <div className="card p-5">
+                <h3 className="panel-title">系统运用的原理</h3>
+                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                  {principles.map((item) => (
+                    <div key={item.title} className="rounded-md bg-surface-lowest p-4">
+                      <p className="font-black text-text">{item.title}</p>
+                      <p className="mt-2 text-sm leading-6 text-muted">{item.text}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="card p-5">
+                <h3 className="panel-title">导入后验收清单</h3>
+                <div className="mt-4 space-y-3">
+                  {["总览 KPI 不再为 0", "线路观测出现你的批次号", "瓶颈诊断表出现 5 个节点", "路径优化能随交期滑块变化", "异常注入后瓶颈节点会迁移", "后台审计日志记录导入与参数变更"].map((item) => (
+                    <div key={item} className="flex items-center gap-3 rounded-md bg-surface-lowest p-3 text-sm">
+                      <Icon name="check_circle" className="text-emerald" />
+                      <span>{item}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+          </div>
+        );
+      }
+
       function App() {
         const [page, setPage] = useState("overview");
         const [channel, setChannel] = useState("全部渠道");
@@ -1621,6 +1773,7 @@
             <div className="main-area">
               <Header page={page} channel={channel} setChannel={setChannel} country={country} setCountry={setCountry} anomalyId={anomalyId} setPage={setPage} reset={reset} />
               <main>
+                {page === "guide" && <GuidePage setPage={setPage} />}
                 {page === "overview" && <Overview model={model} setPage={setPage} anomalyId={anomalyId} />}
                 {page === "leadtime" && <LeadTimePage model={model} setPage={setPage} />}
                 {page === "bottleneck" && <BottleneckPage model={model} setPage={setPage} />}
