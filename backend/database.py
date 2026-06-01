@@ -67,7 +67,12 @@ def execute(conn: Any, query: str, params: Sequence[object] = ()) -> Any:
 
 
 def executemany(conn: Any, query: str, rows: Iterable[Sequence[object]]) -> None:
-    conn.executemany(translate_query(query), list(rows))
+    prepared_rows = list(rows)
+    if is_postgres():
+        with conn.cursor() as cur:
+            cur.executemany(translate_query(query), prepared_rows)
+        return
+    conn.executemany(translate_query(query), prepared_rows)
 
 
 def execute_script(conn: Any, statements: str) -> None:
