@@ -1265,10 +1265,9 @@
         const [loading, setLoading] = useState(false);
         const [notice, setNotice] = useState("");
         const [error, setError] = useState("");
-        const [businessContent, setBusinessContent] = useState([
-          "batch_no,channel_type,origin,destination,piece_count,cbm,ts_order_created,ts_domestic_out,ts_head_arrive,ts_customs_clear,ts_oversea_in,ts_last_mile_del",
-          "BIZ-SZ-US-001,空运,深圳,美国,42,1.6,2026-05-01T08:00:00,2026-05-01T18:00:00,2026-05-05T09:00:00,2026-05-06T12:00:00,2026-05-07T15:00:00,2026-05-09T11:00:00"
-        ].join("\n"));
+        const [businessContent, setBusinessContent] = useState(
+          "batch_no,channel_type,origin,destination,piece_count,cbm,ts_order_created,ts_domestic_out,ts_head_arrive,ts_customs_clear,ts_oversea_in,ts_last_mile_del"
+        );
 
         const adminHeaders = () => ({
           "Content-Type": "application/json",
@@ -1635,10 +1634,7 @@
           { title: "运筹优化", text: "把路线视为图，用交期约束下的最低成本路径和综合评分路径推荐承运方案。" },
           { title: "异常压力测试", text: "通过改变节点耗时、波动和 WIP，观察瓶颈是否迁移，提前准备备用策略。" }
         ];
-        const sampleCsv = [
-          "batch_no,channel_type,origin,destination,piece_count,cbm,ts_order_created,ts_domestic_out,ts_head_arrive,ts_customs_clear,ts_oversea_in,ts_last_mile_del",
-          "BIZ-SZ-US-001,空运,深圳,美国,42,1.6,2026-05-01T08:00:00,2026-05-01T18:00:00,2026-05-05T09:00:00,2026-05-06T12:00:00,2026-05-07T15:00:00,2026-05-09T11:00:00"
-        ].join("\n");
+        const csvTemplate = "batch_no,channel_type,origin,destination,piece_count,cbm,ts_order_created,ts_domestic_out,ts_head_arrive,ts_customs_clear,ts_oversea_in,ts_last_mile_del";
         return (
           <div className="page-pad space-y-5">
             <section className="card grid-bg p-6">
@@ -1693,10 +1689,10 @@
                 </div>
               </div>
               <div className="card p-5">
-                <h3 className="panel-title">可直接粘贴的 CSV 示例</h3>
-                <pre className="mono mt-4 overflow-auto rounded-md border border-outline bg-surface-lowest p-4 text-xs leading-6 text-muted">{sampleCsv}</pre>
+                <h3 className="panel-title">CSV 表头模板</h3>
+                <pre className="mono mt-4 overflow-auto rounded-md border border-outline bg-surface-lowest p-4 text-xs leading-6 text-muted">{csvTemplate}</pre>
                 <div className="mt-4 rounded-md bg-surface-lowest p-4 text-sm leading-7 text-muted">
-                  如果你只有创建时间和妥投时间，也可以先导入；系统会按全链路时长派生中间节点时间。正式试运行建议补齐每个节点时间。
+                  系统不再预填任何虚拟批次。请把真实业务记录从第二行开始粘贴；如果只有创建时间和妥投时间，也可以先导入，正式试运行建议补齐每个节点时间。
                 </div>
               </div>
             </section>
