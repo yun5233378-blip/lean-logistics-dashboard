@@ -5,7 +5,11 @@
 > 真实业务数据驱动的交期分析、瓶颈诊断与路径优化系统。  
 > 面向跨境物流、海外仓、供应链运营团队，用一套可落地的数字化看板把“交期为什么变长、瓶颈在哪里、路线该怎么选”讲清楚。
 
-[线上预览](https://logistics.void52.site/) · [API 健康检查](https://logistics.void52.site/api/health) · [接口文档](https://logistics.void52.site/docs)
+部署后可访问：
+
+- 前端：`https://<your-domain>/`
+- API 健康检查：`https://<your-domain>/api/health`
+- 接口文档：`https://<your-domain>/docs`
 
 ## 项目定位
 
@@ -95,7 +99,7 @@ USAID_SHIPMENTS_ENDPOINT=https://data.usaid.gov/resource/mm7d-nzmf.json
 BACKUP_DIR=/opt/lean-logistics-dashboard/backups
 ```
 
-未配置 `DATABASE_URL` 时默认使用 SQLite。生产环境必须配置 `ADMIN_API_TOKEN`。
+未配置 `DATABASE_URL` 时默认使用 SQLite。生产环境必须配置强随机 `ADMIN_API_TOKEN`，不要把真实 Token、数据库连接串、服务器 IP 或业务运单原始文件提交到公开仓库。
 
 ## 常用接口
 

@@ -116,7 +116,7 @@ sudo APP_DIR=/opt/lean-logistics-dashboard /opt/lean-logistics-dashboard/scripts
 如果服务器已有 Caddy/Nginx 占用 `80/443`，不要把本项目挂到其他项目域名的路径下面。建议添加独立站点块：
 
 ```caddyfile
-logistics.void52.site {
+your-domain.example {
     encode gzip
     reverse_proxy 172.19.0.1:8000
 }
@@ -125,19 +125,19 @@ logistics.void52.site {
 同时在 DNS 中添加：
 
 ```text
-logistics.void52.site  A  43.156.180.164
+your-domain.example  A  <SERVER_IP>
 ```
 
 上线验收地址：
 
-- 前端：https://logistics.void52.site/
-- API 文档：https://logistics.void52.site/docs
-- 健康检查：https://logistics.void52.site/api/health
+- 前端：https://your-domain.example/
+- API 文档：https://your-domain.example/docs
+- 健康检查：https://your-domain.example/api/health
 
 如果暂时没有独立域名，也可以把服务器裸 IP 临时指向本项目：
 
 ```caddyfile
-http://43.156.180.164 {
+http://<SERVER_IP> {
     encode gzip
     reverse_proxy 172.19.0.1:8000
 }
@@ -176,3 +176,9 @@ docker run --rm -p 8000:8000 lean-logistics-dashboard
 ## 7. 注意
 
 `lean_logistics.db` 是本地默认运行库，已加入 `.gitignore`。生产环境建议在 `/etc/lean-logistics-dashboard.env` 中配置 `DATABASE_URL`、`ADMIN_API_TOKEN`、`BACKUP_DIR`。后台管理接口使用 `Authorization: Bearer <ADMIN_API_TOKEN>`，部署脚本会在更新前尝试执行 `scripts/backup_database.sh`。
+
+公开仓库发布前请确认：
+
+- 不提交 `.env`、数据库文件、备份 SQL、SSH 密钥、Cloudflare/云厂商 Token。
+- 不在 README 或部署示例中写入真实服务器 IP、真实域名、真实用户名。
+- 原始 Excel、Word、CSV 运单文件只保留在私有环境；公开仓库只保留字段模板和脱敏说明。

@@ -22,6 +22,8 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Secret safety scan
+        run: python scripts/security_scan.py
+
       - name: Verify backend
         run: python -m backend.verify_backend
-

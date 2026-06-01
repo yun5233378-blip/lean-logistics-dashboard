@@ -2,15 +2,15 @@
 # for this project instead of mounting it under another project's path.
 #
 # DNS requirement:
-#   logistics.void52.site A 43.156.180.164
+#   your-domain.example A <SERVER_IP>
 
-logistics.void52.site {
+your-domain.example {
     encode gzip
     reverse_proxy 172.19.0.1:8000
 }
 
 # Optional IP fallback. Use this only when no other site needs the bare IP.
-http://43.156.180.164 {
+http://<SERVER_IP> {
     encode gzip
     reverse_proxy 172.19.0.1:8000
 }

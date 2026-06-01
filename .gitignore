@@ -10,14 +10,23 @@ env/
 
 # Runtime data
 lean_logistics.db
+*.db
+*.db-*
 *.sqlite
 *.sqlite3
+*.sql
+*.dump
+*.backup
+*.bak
 backups/
+exports/
+uploads/
 
 # Local exports / verification artifacts
 verification/
 stitch-export/
 stitch-export.zip
+*.docx
 
 # OS / editor
 .DS_Store
@@ -29,3 +38,11 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# Credentials / local infrastructure
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+.cloudflared/
+.wrangler/
