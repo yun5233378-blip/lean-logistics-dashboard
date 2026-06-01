@@ -12,6 +12,7 @@ env/
 lean_logistics.db
 *.sqlite
 *.sqlite3
+backups/
 
 # Local exports / verification artifacts
 verification/
@@ -28,4 +29,3 @@ Thumbs.db
 .env
 .env.*
 !.env.example
-

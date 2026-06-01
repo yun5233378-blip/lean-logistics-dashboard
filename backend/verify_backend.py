@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from .app import app
 from .database import init_db
+from .settings import settings
 
 
 def main() -> None:
@@ -50,6 +51,33 @@ def main() -> None:
     batches = client.get("/api/batches", params={"risk_level": "高风险", "limit": 10})
     assert batches.status_code == 200, batches.text
     assert "items" in batches.json()
+
+    ops = client.get("/api/ops/status")
+    assert ops.status_code == 200, ops.text
+    assert "external_shipments" in ops.json()
+
+    unauthorized = client.get("/api/admin/runtime")
+    assert unauthorized.status_code == 401
+
+    headers = {"Authorization": f"Bearer {settings.admin_api_token}"}
+    runtime = client.get("/api/admin/runtime", headers=headers)
+    assert runtime.status_code == 200, runtime.text
+    runtime_payload = runtime.json()
+    assert runtime_payload["database_backend"] in {"sqlite", "postgresql"}
+    assert runtime_payload["model_parameters"]
+    assert runtime_payload["users"]
+
+    parameter = client.put(
+        "/api/admin/model-parameters/route_cost_weight",
+        headers=headers,
+        json={"value": "0.46"},
+    )
+    assert parameter.status_code == 200, parameter.text
+    assert parameter.json()["value"] == "0.46"
+
+    backup = client.post("/api/admin/backup", headers=headers)
+    assert backup.status_code == 200, backup.text
+    assert backup.json()["database_backend"] in {"sqlite", "postgresql"}
 
     print("backend verification passed")
 

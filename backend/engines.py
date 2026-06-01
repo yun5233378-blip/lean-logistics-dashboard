@@ -154,6 +154,47 @@ def get_lpi_scores() -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
+def get_model_parameters() -> list[dict[str, Any]]:
+    rows = fetch_all("SELECT * FROM model_parameters ORDER BY key")
+    return [dict(row) for row in rows]
+
+
+def get_parameter_float(key: str, default: float) -> float:
+    rows = fetch_all("SELECT value FROM model_parameters WHERE key = ?", (key,))
+    if not rows:
+        return default
+    try:
+        return float(rows[0]["value"])
+    except (TypeError, ValueError):
+        return default
+
+
+def get_external_shipments_summary() -> dict[str, Any]:
+    total = fetch_all(
+        """
+        SELECT
+            COUNT(*) AS count,
+            AVG(lead_time_days) AS avg_lead_time_days,
+            AVG(freight_cost_usd) AS avg_freight_cost_usd,
+            AVG(weight_kg) AS avg_weight_kg
+        FROM external_shipments
+        """
+    )[0]
+    by_mode = fetch_all(
+        """
+        SELECT shipment_mode, COUNT(*) AS count, AVG(lead_time_days) AS avg_lead_time_days
+        FROM external_shipments
+        GROUP BY shipment_mode
+        ORDER BY count DESC
+        LIMIT 6
+        """
+    )
+    return {
+        "total": dict(total),
+        "by_mode": [dict(row) for row in by_mode],
+    }
+
+
 def build_model_metadata() -> dict[str, Any]:
     return {
         "data_mode": "真实公开数据驱动",
@@ -161,6 +202,8 @@ def build_model_metadata() -> dict[str, Any]:
         "sources": get_data_sources(),
         "model_references": get_model_references(),
         "lpi_scores": get_lpi_scores(),
+        "model_parameters": get_model_parameters(),
+        "external_shipments": get_external_shipments_summary(),
     }
 
 
@@ -242,10 +285,12 @@ def diagnose_bottlenecks(
 
     bottleneck = max(stage_rows, key=lambda item: item["score"])
     for row in stage_rows:
+        cv_warn_threshold = get_parameter_float("toc_cv_warn_threshold", 0.35)
+        load_warn_threshold = get_parameter_float("toc_load_warn_threshold", 0.9)
         warn = (
             row["avg_lead_time_hrs"] > row["target_lead_time_hrs"] * 1.2
-            or row["coefficient_of_variation"] > 0.35
-            or row["load_factor"] > 0.9
+            or row["coefficient_of_variation"] > cv_warn_threshold
+            or row["load_factor"] > load_warn_threshold
         )
         row["status"] = "预警" if warn else "正常"
         if row["stage_id"] == bottleneck["stage_id"]:
@@ -485,7 +530,9 @@ def weighted_route_score(route: dict[str, Any], routes: list[dict[str, Any]], ma
     cost_score = (route["cost"] - min_cost) / (max_cost - min_cost or 1)
     time_score = (route["time_days"] - min_time) / (max_time - min_time or 1)
     infeasible_penalty = 0.65 if route["time_days"] > max_allowed_days else 0
-    return cost_score * 0.45 + time_score * 0.4 + infeasible_penalty
+    cost_weight = get_parameter_float("route_cost_weight", 0.45)
+    time_weight = get_parameter_float("route_time_weight", 0.4)
+    return cost_score * cost_weight + time_score * time_weight + infeasible_penalty
 
 
 def parse_dt(value: str) -> datetime:

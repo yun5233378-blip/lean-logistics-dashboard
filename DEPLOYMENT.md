@@ -5,7 +5,7 @@
 - `backend.app:app` 是 FastAPI 应用
 - `/` 直接返回前端 `index.html`
 - `/api/*` 提供后端接口
-- 启动时自动创建 SQLite Mock 数据库
+- 启动时自动创建公开数据驱动索引；默认 SQLite，配置 `DATABASE_URL` 后使用 PostgreSQL
 
 ## 1. 本地运行
 
@@ -159,4 +159,4 @@ docker run --rm -p 8000:8000 lean-logistics-dashboard
 
 ## 7. 注意
 
-`lean_logistics.db` 是运行时生成的 Mock 数据库，已加入 `.gitignore`。云端每次冷启动会自动创建一份新的原型数据。
+`lean_logistics.db` 是本地默认运行库，已加入 `.gitignore`。生产环境建议在 `/etc/lean-logistics-dashboard.env` 中配置 `DATABASE_URL`、`ADMIN_API_TOKEN`、`BACKUP_DIR`。后台管理接口使用 `Authorization: Bearer <ADMIN_API_TOKEN>`，部署脚本会在更新前尝试执行 `scripts/backup_database.sh`。

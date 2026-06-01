@@ -12,7 +12,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 apt-get update
-apt-get install -y python3 python3-venv python3-pip git nginx
+apt-get install -y python3 python3-venv python3-pip git nginx postgresql-client
 
 mkdir -p "${APP_DIR}"
 if [ ! -d "${APP_DIR}/.git" ]; then
@@ -23,6 +23,24 @@ else
 fi
 
 chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}"
+
+if [ ! -f /etc/lean-logistics-dashboard.env ]; then
+  ADMIN_TOKEN="$(python3 - <<'PY'
+import secrets
+print(secrets.token_urlsafe(32))
+PY
+)"
+  cat > /etc/lean-logistics-dashboard.env <<ENV
+ADMIN_API_TOKEN=${ADMIN_TOKEN}
+ENABLE_ONLINE_IMPORTS=true
+DEFAULT_IMPORT_LIMIT=80
+BACKUP_DIR=${APP_DIR}/backups
+LOG_LEVEL=INFO
+ENV
+  chmod 640 /etc/lean-logistics-dashboard.env
+fi
+mkdir -p "${APP_DIR}/backups"
+chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}/backups"
 
 sudo -u "${APP_USER}" python3 -m venv "${APP_DIR}/.venv"
 sudo -u "${APP_USER}" "${APP_DIR}/.venv/bin/pip" install --upgrade pip

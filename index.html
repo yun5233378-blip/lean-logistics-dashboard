@@ -423,7 +423,8 @@
         { id: "bottleneck", label: "瓶颈诊断", icon: "analytics" },
         { id: "routes", label: "路径优化", icon: "route" },
         { id: "exceptions", label: "异常模拟", icon: "warning" },
-        { id: "batches", label: "线路观测", icon: "list_alt" }
+        { id: "batches", label: "线路观测", icon: "list_alt" },
+        { id: "admin", label: "后台管理", icon: "admin_panel_settings" }
       ];
 
       const apiStageIds = {
@@ -1209,6 +1210,209 @@
         );
       }
 
+      function AdminPage() {
+        const [token, setToken] = useState(localStorage.getItem("lean_admin_token") || "");
+        const [runtime, setRuntime] = useState(null);
+        const [loading, setLoading] = useState(false);
+        const [notice, setNotice] = useState("");
+        const [error, setError] = useState("");
+
+        const adminHeaders = () => ({
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        });
+
+        const persistToken = () => {
+          localStorage.setItem("lean_admin_token", token);
+          setNotice("管理员 Token 已保存");
+        };
+
+        const loadRuntime = () => {
+          if (!token) {
+            setError("请先填写管理员 Token");
+            return;
+          }
+          setLoading(true);
+          setError("");
+          fetch("/api/admin/runtime", { headers: adminHeaders() })
+            .then((response) => {
+              if (!response.ok) throw new Error(`后台接口 ${response.status}`);
+              return response.json();
+            })
+            .then((payload) => {
+              setRuntime(payload);
+              setNotice("后台状态已刷新");
+            })
+            .catch((err) => setError(err.message))
+            .finally(() => setLoading(false));
+        };
+
+        useEffect(() => {
+          if (token) loadRuntime();
+        }, []);
+
+        const runAction = (label, request) => {
+          setLoading(true);
+          setError("");
+          request()
+            .then((response) => {
+              if (!response.ok) throw new Error(`${label}失败：${response.status}`);
+              return response.json();
+            })
+            .then((payload) => {
+              setNotice(payload.message || `${label}已完成`);
+              loadRuntime();
+            })
+            .catch((err) => setError(err.message))
+            .finally(() => setLoading(false));
+        };
+
+        const importUsaid = () => runAction("USAID 运单导入", () => fetch("/api/admin/data/import/usaid", {
+          method: "POST",
+          headers: adminHeaders(),
+          body: JSON.stringify({ limit: Number(runtime?.model_parameters?.find((item) => item.key === "usaid_default_import_limit")?.value || 80) })
+        }));
+
+        const backupNow = () => runAction("备份", () => fetch("/api/admin/backup", { method: "POST", headers: adminHeaders() }));
+        const resetIndex = () => runAction("重建数据索引", () => fetch("/api/admin/data/reset", { method: "POST", headers: adminHeaders() }));
+
+        const saveParameter = (key, value) => runAction("模型参数保存", () => fetch(`/api/admin/model-parameters/${key}`, {
+          method: "PUT",
+          headers: adminHeaders(),
+          body: JSON.stringify({ value })
+        }));
+
+        return (
+          <div className="page-pad space-y-5">
+            <section className="card p-5">
+              <div className="flex flex-wrap items-end justify-between gap-4">
+                <div>
+                  <h3 className="panel-title">后台管理</h3>
+                  <p className="micro mt-1">生产配置、真实数据导入、模型参数和访问角色</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <input value={token} onChange={(event) => setToken(event.target.value)} type="password" placeholder="管理员 Token" className="h-9 rounded-md border border-outline bg-surface-low px-3 text-sm text-text" />
+                  <button className="btn" onClick={persistToken}><Icon name="key" />保存</button>
+                  <button className="btn btn-primary" onClick={loadRuntime} disabled={loading}><Icon name="sync" />刷新</button>
+                </div>
+              </div>
+              {(notice || error) && (
+                <div className={`mt-4 rounded-md border px-4 py-3 text-sm ${error ? "border-rose/50 bg-rose/10 text-rose" : "border-emerald/40 bg-emerald/10 text-emerald"}`}>
+                  {error || notice}
+                </div>
+              )}
+            </section>
+
+            <section className="grid grid-cols-1 gap-5 xl:grid-cols-4">
+              <MetricCard title="数据库后端" value={runtime?.database_backend || "未连接"} icon="database" hint="DATABASE_URL 控制" tone="normal" />
+              <MetricCard title="真实运单" value={runtime?.external_shipments?.total?.count || 0} suffix="条" icon="dataset" hint="USAID shipment 数据" tone="normal" />
+              <MetricCard title="导入任务" value={runtime?.imports?.length || 0} suffix="次" icon="cloud_download" hint="最近任务记录" tone="warn" />
+              <MetricCard title="权限模式" value={runtime?.auth_mode || "待验证"} icon="shield_lock" hint="Bearer Token" tone="normal" />
+            </section>
+
+            <section className="grid grid-cols-1 gap-5 2xl:grid-cols-[1fr_1fr]">
+              <div className="card p-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h3 className="panel-title">数据源导入</h3>
+                  <div className="flex gap-2">
+                    <button className="btn" onClick={importUsaid} disabled={loading}><Icon name="cloud_download" />导入 USAID</button>
+                    <button className="btn" onClick={backupNow} disabled={loading}><Icon name="backup" />立即备份</button>
+                    <button className="btn btn-danger" onClick={resetIndex} disabled={loading}><Icon name="restart_alt" />重建索引</button>
+                  </div>
+                </div>
+                <div className="mt-4 rounded-md bg-surface-lowest p-4">
+                  <p className="micro">USAID API</p>
+                  <p className="mt-2 break-all text-sm text-muted">{runtime?.usaid_endpoint || "等待后台状态"}</p>
+                </div>
+                <div className="mt-4 overflow-auto">
+                  <table className="soft-table w-full min-w-[720px] text-left text-sm">
+                    <thead className="bg-surface-lowest text-muted">
+                      <tr><th className="px-4 py-3">任务</th><th className="px-4 py-3">状态</th><th className="px-4 py-3">导入</th><th className="px-4 py-3">完成时间</th></tr>
+                    </thead>
+                    <tbody>
+                      {(runtime?.imports || []).map((job) => (
+                        <tr key={job.job_id}>
+                          <td className="mono px-4 py-3">{job.job_id}</td>
+                          <td className="px-4 py-3">{job.status}</td>
+                          <td className="mono px-4 py-3">{job.imported_count}</td>
+                          <td className="px-4 py-3 text-muted">{job.finished_at || "运行中"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="card p-5">
+                <h3 className="panel-title">模型参数</h3>
+                <div className="mt-4 space-y-3">
+                  {(runtime?.model_parameters || []).map((param) => (
+                    <ParameterRow key={param.key} param={param} saveParameter={saveParameter} />
+                  ))}
+                </div>
+              </div>
+            </section>
+
+            <section className="grid grid-cols-1 gap-5 2xl:grid-cols-[0.95fr_1.05fr]">
+              <div className="card p-5">
+                <h3 className="panel-title">访问角色</h3>
+                <div className="mt-4 overflow-auto">
+                  <table className="soft-table w-full min-w-[680px] text-left text-sm">
+                    <thead className="bg-surface-lowest text-muted">
+                      <tr><th className="px-4 py-3">用户</th><th className="px-4 py-3">角色</th><th className="px-4 py-3">项目范围</th><th className="px-4 py-3">状态</th></tr>
+                    </thead>
+                    <tbody>
+                      {(runtime?.users || []).map((user) => (
+                        <tr key={user.user_id}>
+                          <td className="px-4 py-3 font-black">{user.display_name}</td>
+                          <td className="px-4 py-3">{user.role}</td>
+                          <td className="px-4 py-3 text-muted">{user.project_scope}</td>
+                          <td className="px-4 py-3">{user.status}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div className="card p-5">
+                <h3 className="panel-title">真实运单统计</h3>
+                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <div className="rounded-md bg-surface-lowest p-4"><p className="micro">平均交付偏差</p><p className="mono mt-2 text-xl font-black text-emerald">{fmt.format(runtime?.external_shipments?.total?.avg_lead_time_days || 0)} 天</p></div>
+                  <div className="rounded-md bg-surface-lowest p-4"><p className="micro">平均运费</p><p className="mono mt-2 text-xl font-black text-amber">{fmt.format(runtime?.external_shipments?.total?.avg_freight_cost_usd || 0)}</p></div>
+                  <div className="rounded-md bg-surface-lowest p-4"><p className="micro">平均重量</p><p className="mono mt-2 text-xl font-black text-emerald">{fmt.format(runtime?.external_shipments?.total?.avg_weight_kg || 0)} kg</p></div>
+                </div>
+                <div className="mt-4 space-y-2">
+                  {(runtime?.external_shipments?.by_mode || []).map((mode) => (
+                    <div key={mode.shipment_mode} className="flex items-center justify-between rounded-md bg-surface-lowest px-4 py-3 text-sm">
+                      <span className="font-bold">{mode.shipment_mode}</span>
+                      <span className="mono text-muted">{mode.count} 条 / {fmt.format(mode.avg_lead_time_days || 0)} 天</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+          </div>
+        );
+      }
+
+      function ParameterRow({ param, saveParameter }) {
+        const [value, setValue] = useState(param.value);
+        return (
+          <div className="rounded-md border border-outline bg-surface-lowest p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="mono text-sm font-black text-emerald">{param.key}</p>
+                <p className="mt-1 text-xs text-muted">{param.description}</p>
+              </div>
+              <div className="flex gap-2">
+                <input value={value} onChange={(event) => setValue(event.target.value)} className="h-9 w-24 rounded-md border border-outline bg-surface-low px-3 text-sm text-text" />
+                <button className="btn" onClick={() => saveParameter(param.key, value)}><Icon name="save" />保存</button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
       function App() {
         const [page, setPage] = useState("overview");
         const [channel, setChannel] = useState("全部渠道");
@@ -1244,6 +1448,7 @@
                 {page === "routes" && <RoutesPage model={model} maxDays={maxDays} setMaxDays={setMaxDays} />}
                 {page === "exceptions" && <ExceptionsPage anomalyId={anomalyId} inject={inject} reset={reset} model={model} />}
                 {page === "batches" && <BatchesPage model={model} />}
+                {page === "admin" && <AdminPage />}
               </main>
             </div>
             {toast && <div className="toast"><div className="flex items-center gap-2"><Icon name={anomalyId === "none" ? "check_circle" : "warning"} /><span className="font-bold">{toast}</span></div></div>}
